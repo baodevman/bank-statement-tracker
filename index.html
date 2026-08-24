@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/src/assets/react.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bank Statement Tracker - Quản lý & Phân tích Sao kê Ngân hàng</title>
+    <meta name="description" content="Ứng dụng bảo mật 100% giúp giải mã và phân tích file sao kê ngân hàng PDF trực tiếp trên trình duyệt hoặc lấy từ Gmail." />
+    
+    <!-- Google Client Script for Identity Services & Google Drive Picker -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js" async defer></script>
+
+    <!-- FOUC prevention for Dark/Light theme -->
+    <meta name="color-scheme" content="light" />
+    <script>
+      {
+        const colorScheme = localStorage.getItem("color-scheme") || "light";
+        document.documentElement.setAttribute("data-theme", colorScheme);
+        const meta = document.querySelector('meta[name="color-scheme"]');
+        if (meta) {
+          meta.content = colorScheme;
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
