@@ -20,7 +20,7 @@ const getAuthHeaderAsync = async (): Promise<Record<string, string>> => {
   }
 
   try {
-    const apiKey = import.meta.env.GOOGLE_API_KEY;
+    const apiKey = import.meta.env.BST_GOOGLE_API_KEY || import.meta.env.VITE_GOOGLE_API_KEY || import.meta.env.GOOGLE_API_KEY;
     if (!apiKey) {
       return { 'Authorization': `Bearer ${googleToken}` };
     }
@@ -67,7 +67,7 @@ export interface AppUser {
 }
 
 const getBaseUrl = () => {
-  const projectId = import.meta.env.FIREBASE_PROJECT_ID || '';
+  const projectId = import.meta.env.BST_FIREBASE_PROJECT_ID || import.meta.env.VITE_FIREBASE_PROJECT_ID || import.meta.env.FIREBASE_PROJECT_ID || '';
   return `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
 };
 

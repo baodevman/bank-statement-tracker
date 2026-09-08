@@ -15,8 +15,8 @@ interface GoogleDriveConnectorProps {
 
 export const GoogleDriveConnector: React.FC<GoogleDriveConnectorProps> = ({ onPDFsLoaded, onError, accessToken }) => {
   // Read config from Vite environment variables (.env)
-  const clientId = import.meta.env.GOOGLE_CLIENT_ID || '';
-  const apiKey = import.meta.env.GOOGLE_API_KEY || '';
+  const clientId = import.meta.env.BST_GOOGLE_CLIENT_ID || import.meta.env.VITE_GOOGLE_CLIENT_ID || import.meta.env.GOOGLE_CLIENT_ID || '';
+  const apiKey = import.meta.env.BST_GOOGLE_API_KEY || import.meta.env.VITE_GOOGLE_API_KEY || import.meta.env.GOOGLE_API_KEY || '';
 
   // Use a ref to store the access token securely and prevent stale closures
   const tokenRef = useRef<string>('');
@@ -113,7 +113,7 @@ export const GoogleDriveConnector: React.FC<GoogleDriveConnectorProps> = ({ onPD
   // Sign in and fetch OAuth token
   const handleOpenPickerFlow = (forceSwitch = false) => {
     if (!clientId.trim() || !apiKey.trim()) {
-      onError('Vui lòng thiết lập GOOGLE_CLIENT_ID và GOOGLE_API_KEY trong file .env trước.');
+      onError('Vui lòng thiết lập BST_GOOGLE_CLIENT_ID và BST_GOOGLE_API_KEY trong file .env hoặc trên Vercel trước.');
       return;
     }
 

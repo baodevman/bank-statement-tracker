@@ -92,10 +92,10 @@ Dự án được xây dựng dưới dạng **Full-stack Serverless App**:
 
    | Tên biến | Mô tả | Ví dụ |
    | :--- | :--- | :--- |
-   | `GOOGLE_CLIENT_ID` | Client ID OAuth 2.0 từ Google Cloud | `722211353542-xxx.apps.googleusercontent.com` |
-   | `GOOGLE_API_KEY` | API Key của Google Drive | `AIzaSyB1B_...` |
-   | `ADMIN_EMAILS` | Danh sách email quản trị (phân cách bằng dấu phẩy) | `your-email@gmail.com` |
-   | `FIREBASE_PROJECT_ID` | ID của dự án Firebase | `bank-statement-tracker-3add2` |
+   | `BST_GOOGLE_CLIENT_ID` | Client ID OAuth 2.0 từ Google Cloud | `722211353542-xxx.apps.googleusercontent.com` |
+   | `BST_GOOGLE_API_KEY` | API Key của Google Drive | `AIzaSyB1B_...` |
+   | `BST_ADMIN_EMAILS` | Danh sách email quản trị (phân cách bằng dấu phẩy) | `your-email@gmail.com` |
+   | `BST_FIREBASE_PROJECT_ID` | ID của dự án Firebase | `bank-statement-tracker-3add2` |
 
 6. Nhấn **Deploy**. Quá trình build sẽ mất khoảng dưới 1 phút.
 7. Sau khi hoàn tất, Vercel sẽ cấp cho bạn một tên miền miễn phí dạng `https://ten-du-an.vercel.app`.
