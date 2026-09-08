@@ -97,7 +97,7 @@ function App() {
   const [globalTemplates, setGlobalTemplates] = useState<BankMappingTemplate[]>([]);
   const [globalBanks, setGlobalBanks] = useState<string[]>([]);
 
-  const adminEmails = (import.meta.env.VITE_ADMIN_EMAILS || '').toLowerCase().split(',').map((e: string) => e.trim());
+  const adminEmails = (import.meta.env.ADMIN_EMAILS || '').toLowerCase().split(',').map((e: string) => e.trim());
   const isAdmin = googleUserEmail ? adminEmails.includes(googleUserEmail.toLowerCase()) : false;
 
   useEffect(() => {
@@ -169,9 +169,9 @@ function App() {
       showError('Google SDK chưa được tải xong. Vui lòng thử lại sau vài giây.');
       return;
     }
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+    const clientId = import.meta.env.GOOGLE_CLIENT_ID || '';
     if (!clientId) {
-      showError('Vui lòng cấu hình VITE_GOOGLE_CLIENT_ID trong file .env.');
+      showError('Vui lòng cấu hình GOOGLE_CLIENT_ID trong file .env.');
       return;
     }
 

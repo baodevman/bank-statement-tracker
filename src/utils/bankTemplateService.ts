@@ -1,5 +1,5 @@
 import {
-  getLocalBankMappings, 
+  getLocalBankMappings,
   saveLocalBankMappings,
   getAppSettings,
   saveAppSettings,
@@ -20,7 +20,7 @@ const getAuthHeaderAsync = async (): Promise<Record<string, string>> => {
   }
 
   try {
-    const apiKey = import.meta.env.VITE_GOOGLE_API_KEY;
+    const apiKey = import.meta.env.GOOGLE_API_KEY;
     if (!apiKey) {
       return { 'Authorization': `Bearer ${googleToken}` };
     }
@@ -43,7 +43,7 @@ const getAuthHeaderAsync = async (): Promise<Record<string, string>> => {
 
     const data = await res.json();
     const idToken = data.idToken;
-    
+
     settings.firebaseIdToken = idToken;
     settings.firebaseIdTokenExpiry = new Date(now.getTime() + 50 * 60 * 1000).toISOString();
     saveAppSettings(settings);
@@ -67,7 +67,7 @@ export interface AppUser {
 }
 
 const getBaseUrl = () => {
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || '';
+  const projectId = import.meta.env.FIREBASE_PROJECT_ID || '';
   return `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
 };
 
@@ -150,7 +150,7 @@ export const saveTemplateDoc = async (template: BankMappingTemplate): Promise<vo
   try {
     const res = await fetch('/api/templates', {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         ...(await getAuthHeaderAsync())
       },
@@ -181,7 +181,7 @@ export const deleteTemplateDoc = async (templateId: string): Promise<void> => {
 // --- Users API ---
 
 export const fetchUserDoc = async (email: string): Promise<AppUser | null> => {
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+  const projectId = import.meta.env.FIREBASE_PROJECT_ID;
   if (!projectId) return null;
 
   try {
@@ -199,14 +199,14 @@ export const fetchUserDoc = async (email: string): Promise<AppUser | null> => {
 };
 
 export const saveUserDoc = async (user: AppUser): Promise<void> => {
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+  const projectId = import.meta.env.FIREBASE_PROJECT_ID;
   if (!projectId) return;
 
   try {
     const body = { fields: toFirestoreFields(user) };
     const res = await fetch(`${getBaseUrl()}/users/${user.email}`, {
       method: 'PATCH',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         ...(await getAuthHeaderAsync())
       },
@@ -219,7 +219,7 @@ export const saveUserDoc = async (user: AppUser): Promise<void> => {
 };
 
 export const fetchAllUsers = async (): Promise<AppUser[]> => {
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+  const projectId = import.meta.env.FIREBASE_PROJECT_ID;
   if (!projectId) return [];
 
   try {
@@ -239,20 +239,20 @@ export const fetchAllUsers = async (): Promise<AppUser[]> => {
 // --- Banks Directory API ---
 
 export const saveGlobalBank = async (bankName: string): Promise<void> => {
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+  const projectId = import.meta.env.FIREBASE_PROJECT_ID;
   if (!projectId) return;
 
   const bankId = bankName.toLowerCase().replace(/[^a-z0-9]/g, '_');
   try {
-    const body = { 
-      fields: { 
+    const body = {
+      fields: {
         name: { stringValue: bankName },
         updatedAt: { stringValue: new Date().toISOString() }
-      } 
+      }
     };
     const res = await fetch(`${getBaseUrl()}/banks/${bankId}`, {
       method: 'PATCH',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         ...(await getAuthHeaderAsync())
       },
@@ -265,7 +265,7 @@ export const saveGlobalBank = async (bankName: string): Promise<void> => {
 };
 
 export const fetchGlobalBanks = async (): Promise<string[]> => {
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+  const projectId = import.meta.env.FIREBASE_PROJECT_ID;
   if (!projectId) return [];
 
   try {

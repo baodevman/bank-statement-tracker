@@ -15,8 +15,8 @@ interface GoogleDriveConnectorProps {
 
 export const GoogleDriveConnector: React.FC<GoogleDriveConnectorProps> = ({ onPDFsLoaded, onError, accessToken }) => {
   // Read config from Vite environment variables (.env)
-  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
-  const apiKey = import.meta.env.VITE_GOOGLE_API_KEY || '';
+  const clientId = import.meta.env.GOOGLE_CLIENT_ID || '';
+  const apiKey = import.meta.env.GOOGLE_API_KEY || '';
 
   // Use a ref to store the access token securely and prevent stale closures
   const tokenRef = useRef<string>('');
@@ -44,7 +44,7 @@ export const GoogleDriveConnector: React.FC<GoogleDriveConnectorProps> = ({ onPD
   // Callback from Google Picker selection (supports multiple files)
   const pickerCallback = async (data: any) => {
     const action = data[google.picker.Response.ACTION];
-    
+
     if (action === google.picker.Action.PICKED) {
       const docs = data[google.picker.Response.DOCUMENTS];
       if (!docs || docs.length === 0) {
@@ -113,7 +113,7 @@ export const GoogleDriveConnector: React.FC<GoogleDriveConnectorProps> = ({ onPD
   // Sign in and fetch OAuth token
   const handleOpenPickerFlow = (forceSwitch = false) => {
     if (!clientId.trim() || !apiKey.trim()) {
-      onError('Vui lòng thiết lập VITE_GOOGLE_CLIENT_ID và VITE_GOOGLE_API_KEY trong file .env trước.');
+      onError('Vui lòng thiết lập GOOGLE_CLIENT_ID và GOOGLE_API_KEY trong file .env trước.');
       return;
     }
 
@@ -151,21 +151,21 @@ export const GoogleDriveConnector: React.FC<GoogleDriveConnectorProps> = ({ onPD
             fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
               headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
             })
-            .then(res => res.json())
-            .then(userInfo => {
-              const email = userInfo.email || 'Google Account';
-              const s = getAppSettings();
-              s.googleAccountEmail = email;
-              s.googleLoginTime = new Date().toISOString();
-              s.googleAccessToken = tokenResponse.access_token;
-              saveAppSettings(s);
-              
-              setSwitchAccount(false);
-            })
-            .catch(err => {
-              console.error('Error fetching user info:', err);
-              setSwitchAccount(false);
-            });
+              .then(res => res.json())
+              .then(userInfo => {
+                const email = userInfo.email || 'Google Account';
+                const s = getAppSettings();
+                s.googleAccountEmail = email;
+                s.googleLoginTime = new Date().toISOString();
+                s.googleAccessToken = tokenResponse.access_token;
+                saveAppSettings(s);
+
+                setSwitchAccount(false);
+              })
+              .catch(err => {
+                console.error('Error fetching user info:', err);
+                setSwitchAccount(false);
+              });
 
             createPicker(tokenResponse.access_token);
           }
@@ -211,8 +211,8 @@ export const GoogleDriveConnector: React.FC<GoogleDriveConnectorProps> = ({ onPD
             </p>
           </div>
         </div>
-        <button 
-          className="btn btn-ghost" 
+        <button
+          className="btn btn-ghost"
           onClick={() => setShowInstructions(!showInstructions)}
           style={{ padding: '0.5rem', borderRadius: 'var(--border-radius-md)' }}
           title="Hướng dẫn cấu hình"
@@ -247,8 +247,8 @@ export const GoogleDriveConnector: React.FC<GoogleDriveConnectorProps> = ({ onPD
               fontSize: '0.8rem',
               fontFamily: 'monospace'
             }}>
-              VITE_GOOGLE_CLIENT_ID=your_client_id_here<br />
-              VITE_GOOGLE_API_KEY=your_api_key_here
+              GOOGLE_CLIENT_ID=your_client_id_here<br />
+              GOOGLE_API_KEY=your_api_key_here
             </pre>
             Sau đó khởi động lại server phát triển (npm run dev) để cập nhật.
           </div>
@@ -336,11 +336,11 @@ export const GoogleDriveConnector: React.FC<GoogleDriveConnectorProps> = ({ onPD
 
       {/* Account Info & Switcher Option */}
       {isConfigured && (
-        <div style={{ 
-          display: 'flex', 
+        <div style={{
+          display: 'flex',
           flexDirection: 'column',
           gap: '0.75rem',
-          fontSize: '0.85rem', 
+          fontSize: '0.85rem',
           color: 'var(--text-secondary)',
           backgroundColor: 'var(--bg-secondary)',
           padding: '1rem 1.25rem',
