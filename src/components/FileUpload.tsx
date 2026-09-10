@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Upload, Lock, Unlock, Loader2, AlertCircle, DollarSign } from 'lucide-react';
-import { detectTemplateAndMapping, parseTransactionsFromRaw, parseAmount } from '../utils/pdfParser';
+import { detectTemplateAndMapping, parseTransactionsFromRaw, parseAmount, extractPDFRawRows } from '../utils/pdfParser';
 import type { RawRow, ColumnMapping } from '../utils/pdfParser';
 import type { Transaction, BankMappingTemplate } from '../utils/db';
 import { getBankPasswords, saveBankPasswords, savePdfStatement, getAppSettings } from '../utils/db';
@@ -188,6 +188,25 @@ export const FileUpload: React.FC<FileUploadProps> = ({
     return data.rawRows;
   };
 
+  const parsePdfWithFallback = async (buffer: ArrayBuffer, pass: string): Promise<RawRow[]> => {
+    // If file size is larger than 3MB, parse client-side directly to avoid Vercel 4.5MB payload limit
+    if (buffer.byteLength > 3 * 1024 * 1024) {
+      console.log('File size > 3MB, parsing PDF client-side to bypass Vercel serverless payload limit.');
+      return await extractPDFRawRows(buffer, pass);
+    }
+
+    try {
+      return await parsePdfViaBackend(buffer, pass);
+    } catch (err: any) {
+      // Re-throw password errors so the password prompt or saved passwords logic executes
+      if (err.message === 'PASSWORD_REQUIRED' || err.message === 'INCORRECT_PASSWORD') {
+        throw err;
+      }
+      console.warn('Backend PDF parsing failed or unhandled server error, falling back to client-side parsing:', err);
+      return await extractPDFRawRows(buffer, pass);
+    }
+  };
+
   // Try to decrypt and parse the PDF
   const tryDecryptPDF = async (buffer: ArrayBuffer, name: string, pass: string) => {
     setIsLoading(true);
@@ -197,11 +216,11 @@ export const FileUpload: React.FC<FileUploadProps> = ({
 
       if (pass !== '') {
         // A specific password was supplied (manually entered by user)
-        rows = await parsePdfViaBackend(buffer, pass);
+        rows = await parsePdfWithFallback(buffer, pass);
       } else {
         // Try without password first
         try {
-          rows = await parsePdfViaBackend(buffer, '');
+          rows = await parsePdfWithFallback(buffer, '');
           usedPass = '';
         } catch (e: any) {
           if (e.message === 'PASSWORD_REQUIRED') {
@@ -213,7 +232,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
             for (const savedPass of savedPasswords) {
               if (!savedPass) continue;
               try {
-                rows = await parsePdfViaBackend(buffer, savedPass);
+                rows = await parsePdfWithFallback(buffer, savedPass);
                 usedPass = savedPass;
                 success = true;
                 break;
