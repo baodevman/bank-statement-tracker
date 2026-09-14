@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import html2canvas from 'html2canvas';
-import { Search, Filter, Edit2, Group, CheckSquare, Square, Split, Trash2, Sparkles, Printer, Share2 } from 'lucide-react';
+import { Search, Filter, Edit2, Group, CheckSquare, Square, Split, Trash2, Sparkles, Printer, Share2, Save, X, RotateCcw, Eye, EyeOff, ChevronDown, ChevronRight, FolderTree } from 'lucide-react';
 import type { Transaction, Category, Group as TxGroup } from '../utils/db';
 
 interface TransactionTableProps {
@@ -60,13 +60,44 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedGroupFilter, setSelectedGroupFilter] = useState<string>('all');
+  const [selectedBankFilter, setSelectedBankFilter] = useState<string>('all');
   const [showFilterModal, setShowFilterModal] = useState<boolean>(false);
+  const [showHidden, setShowHidden] = useState<boolean>(false);
+
+  // Floating Toolbar Position State
+  const [toolbarPosition, setToolbarPosition] = useState<'top' | 'bottom' | 'left' | 'right'>('top');
+
+  // Grouping State
+  const [groupBy, setGroupBy] = useState<'none' | 'category' | 'group' | 'bank' | 'date' | 'description'>('none');
+  const [descMatchMode, setDescMatchMode] = useState<'exact' | 'fuzzy'>('exact');
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+
+  const toggleGroupCollapse = (key: string) => {
+    setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  // Available banks list from transactions
+  const availableBanks = useMemo(() => {
+    const banks = new Set<string>();
+    statementFiltered.forEach(t => {
+      if (t.bank) banks.add(t.bank);
+    });
+    return Array.from(banks).sort();
+  }, [statementFiltered]);
+
+  // Count of hidden items in current statement selection
+  const hiddenCount = useMemo(() => {
+    return statementFiltered.filter(t => t.isHidden).length;
+  }, [statementFiltered]);
 
   const handleResetFilters = () => {
     setSelectedCategory('all');
     setSelectedGroupFilter('all');
+    setSelectedBankFilter('all');
     setSelectedStatement('all');
     setSearchTerm('');
+    setShowHidden(false);
+    setGroupBy('none');
   };
 
   // Selection State
@@ -193,18 +224,22 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
     return mainPart;
   };
 
-  // Apply filters with accent-insensitive search
+  // Apply filters with accent-insensitive search and hidden item toggle
   const processedTransactions = useMemo(() => {
     const cleanSearch = removeAccents(searchTerm.toLowerCase().trim());
     return statementFiltered.filter(t => {
+      // Exclude hidden items if showHidden is false
+      if (!showHidden && t.isHidden) return false;
+
       const matchesSearch = removeAccents(t.description.toLowerCase()).includes(cleanSearch);
       const matchesCategory = selectedCategory === 'all' ? true : t.category === selectedCategory;
       const matchesGroup = selectedGroupFilter === 'all' ? true :
         selectedGroupFilter === 'none' ? t.groupId === null : t.groupId === selectedGroupFilter;
+      const matchesBank = selectedBankFilter === 'all' ? true : t.bank === selectedBankFilter;
 
-      return matchesSearch && matchesCategory && matchesGroup;
+      return matchesSearch && matchesCategory && matchesGroup && matchesBank;
     });
-  }, [statementFiltered, searchTerm, selectedCategory, selectedGroupFilter]);
+  }, [statementFiltered, searchTerm, selectedCategory, selectedGroupFilter, selectedBankFilter, showHidden]);
 
   // Sort the filtered transactions
   const sortedTransactions = useMemo(() => {
@@ -288,10 +323,19 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
   const tableSummaryText = useMemo(() => {
     let totalPersonal = 0;
     let totalGroup = 0;
+    let totalRefund = 0;
 
     sortedTransactions.forEach(t => {
-      if (t.amount < 0) {
-        const absVal = Math.abs(t.amount);
+      const isRefund = t.isRefund || t.amount > 0;
+      const absVal = Math.abs(t.amount);
+      if (isRefund) {
+        totalRefund += absVal;
+        if (t.groupId || t.excludeFromPersonal) {
+          totalGroup -= absVal;
+        } else {
+          totalPersonal -= absVal;
+        }
+      } else {
         if (t.groupId || t.excludeFromPersonal) {
           totalGroup += absVal;
         } else {
@@ -302,8 +346,9 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
 
     return `📊 BÁO CÁO GIAO DỊCH BST
 Số giao dịch: ${sortedTransactions.length}
-- Tổng chi tiêu cá nhân: ${totalPersonal.toLocaleString('vi-VN')} VND
-- Tổng chi tiêu nhóm/mua hộ: ${totalGroup.toLocaleString('vi-VN')} VND`;
+- Tổng dư nợ cá nhân: ${totalPersonal.toLocaleString('vi-VN')} VND
+- Tổng dư nợ nhóm/mua hộ: ${totalGroup.toLocaleString('vi-VN')} VND
+${totalRefund > 0 ? `- Tổng hoàn tiền/ghi có: ${totalRefund.toLocaleString('vi-VN')} VND` : ''}`;
   }, [sortedTransactions]);
 
   // Calculate totals per group in the currently filtered transactions (filtered group totals)
@@ -316,22 +361,144 @@ Số giao dịch: ${sortedTransactions.length}
     });
 
     processedTransactions.forEach(t => {
-      if (t.amount < 0) {
-        const absVal = Math.abs(t.amount);
-        if (t.groupId) {
-          totals[t.groupId] = (totals[t.groupId] || 0) + absVal;
-        } else if (t.excludeFromPersonal) {
-          totals['personal_exclude'] = (totals['personal_exclude'] || 0) + absVal;
-        } else {
-          totals['personal'] = (totals['personal'] || 0) + absVal;
-        }
+      const isRefund = t.isRefund || t.amount > 0;
+      const absVal = Math.abs(t.amount);
+      const val = isRefund ? -absVal : absVal;
+
+      if (t.groupId) {
+        totals[t.groupId] = (totals[t.groupId] || 0) + val;
+      } else if (t.excludeFromPersonal) {
+        totals['personal_exclude'] = (totals['personal_exclude'] || 0) + val;
+      } else {
+        totals['personal'] = (totals['personal'] || 0) + val;
       }
     });
 
     return totals;
   }, [processedTransactions, groups]);
 
-  // Scan and Bulk Categorization Handlers
+  // Calculate total debt per bank in the currently filtered transactions
+  const bankTotals = useMemo(() => {
+    const totals: Record<string, { bank: string; spending: number; refund: number; netDebt: number; count: number }> = {};
+
+    processedTransactions.forEach(t => {
+      const bankName = t.bank || 'Khác / Không rõ';
+      if (!totals[bankName]) {
+        totals[bankName] = { bank: bankName, spending: 0, refund: 0, netDebt: 0, count: 0 };
+      }
+
+      const isRefund = t.isRefund || t.amount > 0;
+      const absVal = Math.abs(t.amount);
+      totals[bankName].count += 1;
+
+      if (isRefund) {
+        totals[bankName].refund += absVal;
+        totals[bankName].netDebt -= absVal;
+      } else {
+        totals[bankName].spending += absVal;
+        totals[bankName].netDebt += absVal;
+      }
+    });
+
+    return Object.values(totals).sort((a, b) => b.netDebt - a.netDebt);
+  }, [processedTransactions]);
+
+  // Single transaction inline hide toggle
+  const handleToggleHide = (tx: Transaction) => {
+    const updated: Transaction = {
+      ...tx,
+      isHidden: !tx.isHidden
+    };
+    onUpdateTransactions([updated]);
+  };
+
+  // Bulk hide / unhide handler
+  const handleBulkHide = (hideStatus: boolean) => {
+    if (selectedIds.length === 0) return;
+    const updated = transactions.map(t => {
+      if (selectedIds.includes(t.id)) {
+        return { ...t, isHidden: hideStatus };
+      }
+      return t;
+    });
+    onUpdateTransactions(updated);
+  };
+
+  // Extract fuzzy key for description grouping
+  const extractFuzzyKeyword = (desc: string): string => {
+    const clean = extractCleanKeyword(desc).toUpperCase();
+    const words = clean.split(/\s+/).filter(w => w.length > 1);
+    if (words.length === 0) return 'GIAO DỊCH KHÁC';
+    if (words.length === 1) return words[0];
+    return words[0] + ' ' + words[1];
+  };
+
+  // Calculate Grouped Sections for Parent/Child Grouping View Mode
+  const groupedSections = useMemo(() => {
+    if (groupBy === 'none') return [];
+
+    interface GroupedSection {
+      key: string;
+      label: string;
+      count: number;
+      netDebt: number;
+      transactions: Transaction[];
+    }
+
+    const map: Record<string, GroupedSection> = {};
+
+    sortedTransactions.forEach(t => {
+      let key = '';
+      let label = '';
+
+      if (groupBy === 'category') {
+        const cat = categories.find(c => c.id === t.category);
+        key = t.category || 'others';
+        label = cat ? cat.name : 'Khác / Chưa phân loại';
+      } else if (groupBy === 'group') {
+        const g = groups.find(gr => gr.id === t.groupId);
+        key = t.groupId ? t.groupId : (t.excludeFromPersonal ? 'personal_exclude' : 'personal');
+        label = g ? g.name : (t.excludeFromPersonal ? 'Mua hộ tự do' : 'Cá nhân');
+      } else if (groupBy === 'bank') {
+        key = t.bank || 'Khác';
+        label = key;
+      } else if (groupBy === 'date') {
+        key = t.date;
+        label = formatDateDisplay(t.date);
+      } else if (groupBy === 'description') {
+        if (descMatchMode === 'exact') {
+          key = extractCleanKeyword(t.description).toLowerCase();
+          label = extractCleanKeyword(t.description) || t.description;
+        } else {
+          key = extractFuzzyKeyword(t.description).toLowerCase();
+          label = extractFuzzyKeyword(t.description);
+        }
+      }
+
+      if (!map[key]) {
+        map[key] = { key, label, count: 0, netDebt: 0, transactions: [] };
+      }
+
+      const isRefund = t.isRefund || t.amount > 0;
+      const absVal = Math.abs(t.amount);
+      const val = isRefund ? -absVal : absVal;
+
+      map[key].count += 1;
+      map[key].netDebt += val;
+      map[key].transactions.push(t);
+    });
+
+    return Object.values(map).sort((a, b) => b.netDebt - a.netDebt);
+  }, [sortedTransactions, groupBy, descMatchMode, categories, groups]);
+
+  const totalColumnCount = useMemo(() => {
+    let count = 5;
+    if (visibleColumns.bank) count++;
+    if (visibleColumns.cardType) count++;
+    if (visibleColumns.classification) count++;
+    if (visibleColumns.actions) count++;
+    return count;
+  }, [visibleColumns]);
   const handleOpenBulkScan = (tx: Transaction) => {
     setScanTx(tx);
     const cleanedKw = extractCleanKeyword(tx.description);
@@ -524,8 +691,318 @@ Số giao dịch: ${sortedTransactions.length}
       <span style={{ color: 'var(--color-primary)', fontSize: '0.75rem', marginLeft: '0.2rem' }}>▼</span>;
   };
 
-  const isAnyFilterActive = selectedCategory !== 'all' || selectedGroupFilter !== 'all' || selectedStatement !== 'all';
-  const activeFilterCount = (selectedCategory !== 'all' ? 1 : 0) + (selectedGroupFilter !== 'all' ? 1 : 0) + (selectedStatement !== 'all' ? 1 : 0);
+  const isAnyFilterActive = selectedCategory !== 'all' || selectedGroupFilter !== 'all' || selectedStatement !== 'all' || selectedBankFilter !== 'all';
+  const activeFilterCount = (selectedCategory !== 'all' ? 1 : 0) + (selectedGroupFilter !== 'all' ? 1 : 0) + (selectedStatement !== 'all' ? 1 : 0) + (selectedBankFilter !== 'all' ? 1 : 0);
+
+  const renderTransactionRow = (tx: Transaction, isChildRow: boolean = false) => {
+    const isSelected = selectedIds.includes(tx.id);
+    const categoryObj = categories.find(c => c.id === tx.category);
+    const groupObj = groups.find(g => g.id === tx.groupId);
+
+    if (tx.id === inlineEditingId) {
+      return (
+        <tr key={tx.id} style={{ backgroundColor: 'rgba(99, 102, 241, 0.1)' }}>
+          <td style={{ textAlign: 'center' }} className="print-hide">
+            <button disabled style={{ background: 'none', border: 'none', padding: 0, opacity: 0.3 }}>
+              <Square size={18} />
+            </button>
+          </td>
+          <td>
+            <input
+              type="date"
+              className="input-inline"
+              value={inlineDate}
+              onChange={e => setInlineDate(e.target.value)}
+            />
+          </td>
+          {visibleColumns.bank && (
+            <td>
+              <input
+                type="text"
+                className="input-inline"
+                value={tx.bank}
+                disabled
+                style={{ opacity: 0.7 }}
+              />
+            </td>
+          )}
+          {visibleColumns.cardType && (
+            <td>
+              <select
+                className="select-inline"
+                value={inlineCardType}
+                onChange={e => setInlineCardType(e.target.value)}
+              >
+                <option value="none">Không có badge</option>
+                <option value="VISA">VISA</option>
+                <option value="MASTER">MASTER</option>
+                <option value="JCB">JCB</option>
+              </select>
+            </td>
+          )}
+          <td>
+            <input
+              type="text"
+              className="input-inline"
+              value={inlineDesc}
+              onChange={e => setInlineDesc(e.target.value)}
+            />
+          </td>
+          <td>
+            <select
+              className="select-inline"
+              value={inlineCategory}
+              onChange={e => setInlineCategory(e.target.value)}
+            >
+              <option value="">-- Chọn danh mục --</option>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </td>
+          <td>
+            <select
+              className="select-inline"
+              value={inlineGroupId}
+              onChange={e => {
+                if (e.target.value === 'NEW_GROUP_OPTION') {
+                  setSelectedIds([tx.id]);
+                  setShowGroupCreate(true);
+                } else {
+                  setInlineGroupId(e.target.value);
+                }
+              }}
+            >
+              <option value="none">Cá nhân</option>
+              {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+              <option value="NEW_GROUP_OPTION">+ Tạo nhóm mới...</option>
+            </select>
+          </td>
+          <td style={{ textAlign: 'right' }}>
+            <input
+              type="number"
+              className="input-inline"
+              value={inlineAmount}
+              onChange={e => setInlineAmount(parseFloat(e.target.value) || 0)}
+              style={{ textAlign: 'right', fontWeight: 'bold' }}
+            />
+          </td>
+          {visibleColumns.classification && (
+            <td>
+              <label className="switch" style={{ transform: 'scale(0.8)' }}>
+                <input
+                  type="checkbox"
+                  checked={inlineExclude || (inlineGroupId !== 'none' && inlineGroupId !== 'NEW_GROUP_OPTION')}
+                  onChange={e => setInlineExclude(e.target.checked)}
+                  disabled={inlineGroupId !== 'none' && inlineGroupId !== 'NEW_GROUP_OPTION'}
+                />
+                <span className="slider"></span>
+              </label>
+            </td>
+          )}
+          {visibleColumns.actions && (
+            <td className="print-hide">
+              <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'center' }}>
+                <button
+                  className="btn btn-ghost"
+                  style={{ padding: '0.25rem', fontSize: '1rem', color: 'var(--color-success)', cursor: 'pointer' }}
+                  onClick={() => handleSaveInlineEdit(tx)}
+                  title="Lưu thay đổi"
+                >
+                  <Save size={16} />
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  style={{ padding: '0.25rem', fontSize: '1rem', color: 'var(--color-danger)', cursor: 'pointer' }}
+                  onClick={() => setInlineEditingId(null)}
+                  title="Hủy"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </td>
+          )}
+        </tr>
+      );
+    }
+
+    return (
+      <tr
+        key={tx.id}
+        style={{
+          backgroundColor: tx.isHidden
+            ? 'rgba(148, 163, 184, 0.15)'
+            : isSelected
+              ? 'rgba(99, 102, 241, 0.05)'
+              : isChildRow
+                ? 'rgba(255, 255, 255, 0.02)'
+                : undefined,
+          opacity: tx.isHidden ? 0.6 : 1
+        }}
+      >
+        <td style={{ textAlign: 'center', paddingLeft: isChildRow ? '1.25rem' : undefined }} className="print-hide">
+          <button
+            onClick={() => handleToggleSelect(tx.id)}
+            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignContent: 'center', color: isSelected ? 'var(--color-primary)' : 'var(--text-tertiary)' }}
+          >
+            {isSelected ? <CheckSquare size={18} /> : <Square size={18} />}
+          </button>
+        </td>
+        <td style={{ whiteSpace: 'nowrap', paddingLeft: isChildRow ? '1.5rem' : undefined }}>{formatDateDisplay(tx.date)}</td>
+        {visibleColumns.bank && (
+          <td style={{ whiteSpace: 'nowrap', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{tx.bank}</td>
+        )}
+        {visibleColumns.cardType && (
+          <td style={{ whiteSpace: 'nowrap' }}>
+            {tx.cardType ? (
+              <span
+                className="badge"
+                style={{
+                  backgroundColor: tx.cardType === 'VISA' ? 'rgba(59, 130, 246, 0.15)' :
+                    tx.cardType === 'MASTER' ? 'rgba(249, 115, 22, 0.15)' :
+                      'rgba(16, 185, 129, 0.15)',
+                  color: tx.cardType === 'VISA' ? '#3b82f6' :
+                    tx.cardType === 'MASTER' ? '#f97316' :
+                      '#10b981',
+                  fontWeight: 'bold'
+                }}
+              >
+                {tx.cardType}
+              </span>
+            ) : (
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>-</span>
+            )}
+          </td>
+        )}
+        <td>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: '500', textDecoration: tx.isHidden ? 'line-through' : 'none' }}>
+                {tx.description}
+              </span>
+              {tx.isHidden && (
+                <span className="badge" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--color-danger)', fontSize: '0.68rem', padding: '0.05rem 0.35rem' }}>
+                  Đã ẩn
+                </span>
+              )}
+              {tx.isInstallment && (
+                <span
+                  className="tooltip-container"
+                  style={{
+                    fontSize: '0.7rem',
+                    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                    color: 'var(--color-warning)',
+                    fontWeight: 'bold',
+                    border: '1px solid rgba(245, 158, 11, 0.25)',
+                    padding: '0.05rem 0.3rem',
+                    borderRadius: '4px',
+                    cursor: 'help',
+                    display: 'inline-flex',
+                    alignItems: 'center'
+                  }}
+                >
+                  Trả góp
+                  <span className="tooltip-text">
+                    Dư nợ gốc còn lại: {tx.remainingBalance?.toLocaleString('vi-VN')} VND
+                  </span>
+                </span>
+              )}
+            </div>
+            {tx.isSplit && (
+              <span style={{ fontSize: '0.7rem', color: 'var(--color-primary)', fontWeight: 'bold' }}>
+                [Đã chia nhỏ từ GD gốc: {tx.originalAmount.toLocaleString('vi-VN')} VND]
+              </span>
+            )}
+          </div>
+        </td>
+        <td>
+          {categoryObj && (
+            <span
+              className="badge"
+              style={{ backgroundColor: `${categoryObj.color}15`, color: categoryObj.color }}
+            >
+              {categoryObj.name}
+            </span>
+          )}
+        </td>
+        <td>
+          {groupObj ? (
+            <span className="badge badge-primary">
+              <Group size={10} style={{ marginRight: '0.2rem' }} />
+              {groupObj.name}
+            </span>
+          ) : (
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>Cá nhân</span>
+          )}
+        </td>
+        <td style={{
+          textAlign: 'right',
+          fontWeight: '700',
+          color: (tx.isRefund || tx.amount > 0) ? 'var(--color-success)' : 'var(--color-danger)',
+          whiteSpace: 'nowrap',
+          textDecoration: tx.isHidden ? 'line-through' : 'none'
+        }}>
+          {tx.isRefund ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.15rem' }}>
+              <span>+{Math.abs(tx.amount).toLocaleString('vi-VN')} VND</span>
+              <span className="badge badge-success" style={{ fontSize: '0.68rem', display: 'inline-flex', alignItems: 'center', gap: '0.2rem', padding: '0.1rem 0.35rem' }}>
+                <RotateCcw size={10} /> Hoàn tiền / Hủy GD
+              </span>
+            </div>
+          ) : (
+            <>{tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString('vi-VN')} VND</>
+          )}
+        </td>
+        {visibleColumns.classification && (
+          <td>
+            {tx.excludeFromPersonal || tx.groupId ? (
+              <span className="badge badge-warning">Mua hộ / Nhóm</span>
+            ) : (
+              <span className="badge badge-success">Cá nhân</span>
+            )}
+          </td>
+        )}
+        {visibleColumns.actions && (
+          <td className="print-hide">
+            <div style={{ display: 'flex', gap: '0.2rem', justifyContent: 'center' }}>
+              <button
+                className="btn btn-ghost"
+                style={{ padding: '0.25rem', borderRadius: 'var(--border-radius-sm)', color: tx.isHidden ? 'var(--color-warning)' : 'var(--text-secondary)' }}
+                onClick={() => handleToggleHide(tx)}
+                title={tx.isHidden ? 'Hiện lại giao dịch này' : 'Ẩn giao dịch này khỏi tính toán'}
+              >
+                {tx.isHidden ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+              <button
+                className="btn btn-ghost"
+                style={{ padding: '0.25rem', borderRadius: 'var(--border-radius-sm)', color: 'var(--text-secondary)' }}
+                onClick={() => handleStartInlineEdit(tx)}
+                title="Sửa thông tin"
+              >
+                <Edit2 size={14} />
+              </button>
+              <button
+                className="btn btn-ghost"
+                style={{ padding: '0.25rem', borderRadius: 'var(--border-radius-sm)', color: 'var(--text-secondary)' }}
+                onClick={() => handleOpenBulkScan(tx)}
+                title="Gán nhanh giao dịch tương tự (Scan)"
+              >
+                <Sparkles size={14} />
+              </button>
+              {tx.amount < 0 && !tx.isSplit && (
+                <button
+                  className="btn btn-ghost"
+                  style={{ padding: '0.25rem', borderRadius: 'var(--border-radius-sm)', color: 'var(--text-secondary)' }}
+                  onClick={() => handleOpenSplit(tx)}
+                  title="Tách giao dịch (Split)"
+                >
+                  <Split size={14} />
+                </button>
+              )}
+            </div>
+          </td>
+        )}
+      </tr>
+    );
+  };
 
   return (
     <div id="table-capture-area" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }} className="animate-fade-in">
@@ -561,6 +1038,50 @@ Số giao dịch: ${sortedTransactions.length}
               style={{ paddingLeft: '2.5rem', width: '100%' }}
             />
           </div>
+
+          {/* Inline Hide Toggle Control */}
+          <button
+            className={`btn ${showHidden ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '0.55rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', height: '42px', cursor: 'pointer' }}
+            onClick={() => setShowHidden(!showHidden)}
+            title={showHidden ? 'Đang hiển thị cả giao dịch đã ẩn' : 'Hiển thị thêm các giao dịch đã ẩn'}
+          >
+            {showHidden ? <Eye size={16} /> : <EyeOff size={16} />}
+            <span style={{ fontSize: '0.8rem' }}>
+              {showHidden ? 'Đang hiện item ẩn' : `Hiện item ẩn ${hiddenCount > 0 ? `(${hiddenCount})` : ''}`}
+            </span>
+          </button>
+
+          {/* Grouping Mode Control Bar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', backgroundColor: 'var(--bg-secondary)', padding: '0.2rem 0.6rem', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--border-color)', height: '42px' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              <FolderTree size={15} color="var(--color-primary)" /> Gom nhóm:
+            </span>
+            <select
+              value={groupBy}
+              onChange={(e) => setGroupBy(e.target.value as any)}
+              style={{ width: 'auto', padding: '0.3rem 0.5rem', fontSize: '0.8rem', border: 'none', background: 'transparent', fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              <option value="none">-- Không gom nhóm --</option>
+              <option value="category">📁 Theo Danh mục</option>
+              <option value="group">👥 Theo Nhóm chi tiêu</option>
+              <option value="bank">🏦 Theo Ngân hàng</option>
+              <option value="date">📅 Theo Ngày giao dịch</option>
+              <option value="description">📝 Theo Nội dung giao dịch</option>
+            </select>
+
+            {groupBy === 'description' && (
+              <select
+                value={descMatchMode}
+                onChange={(e) => setDescMatchMode(e.target.value as any)}
+                style={{ width: 'auto', padding: '0.2rem 0.4rem', fontSize: '0.75rem', borderRadius: '4px', border: '1px solid var(--color-primary)' }}
+              >
+                <option value="exact">🎯 Tương đương</option>
+                <option value="fuzzy">🔍 Gần giống</option>
+              </select>
+            )}
+          </div>
+
           <button
             className={`btn ${isAnyFilterActive ? 'btn-primary' : 'btn-secondary'}`}
             style={{ padding: '0.55rem 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '42px', cursor: 'pointer' }}
@@ -610,6 +1131,12 @@ Số giao dịch: ${sortedTransactions.length}
                 <span style={{ cursor: 'pointer', fontWeight: 'bold', marginLeft: '0.25rem', fontSize: '0.9rem' }} onClick={() => setSelectedGroupFilter('all')}>&times;</span>
               </span>
             )}
+            {selectedBankFilter !== 'all' && (
+              <span className="badge" style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--color-success)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.25rem 0.5rem', borderRadius: 'var(--border-radius-sm)', fontSize: '0.75rem' }}>
+                Ngân hàng: {selectedBankFilter}
+                <span style={{ cursor: 'pointer', fontWeight: 'bold', marginLeft: '0.25rem', fontSize: '0.9rem' }} onClick={() => setSelectedBankFilter('all')}>&times;</span>
+              </span>
+            )}
             <button className="btn btn-ghost" style={{ fontSize: '0.8rem', padding: '0.2rem 0.5rem', color: 'var(--color-danger)', cursor: 'pointer' }} onClick={handleResetFilters}>
               Xóa tất cả
             </button>
@@ -650,19 +1177,28 @@ Số giao dịch: ${sortedTransactions.length}
               {/* Group bulk */}
               <select
                 value={bulkGroup}
-                onChange={(e) => setBulkGroup(e.target.value)}
+                onChange={(e) => {
+                  if (e.target.value === 'NEW_GROUP_OPTION') {
+                    setShowGroupCreate(true);
+                  } else {
+                    setBulkGroup(e.target.value);
+                  }
+                }}
                 style={{ width: 'auto', padding: '0.4rem 0.75rem', fontSize: '0.8rem' }}
               >
                 <option value="">Gán nhóm...</option>
                 <option value="none">Cá nhân</option>
                 {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                <option value="NEW_GROUP_OPTION">+ Tạo nhóm mới...</option>
               </select>
-              <button className="btn btn-secondary" style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem' }} onClick={handleApplyBulkGroup} disabled={!bulkGroup}>Áp dụng</button>
+              <button className="btn btn-secondary" style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem' }} onClick={handleApplyBulkGroup} disabled={!bulkGroup || bulkGroup === 'NEW_GROUP_OPTION'}>Áp dụng</button>
 
               <div style={{ height: '20px', width: '1px', backgroundColor: 'var(--border-color)' }}></div>
 
               <button className="btn btn-secondary" style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem' }} onClick={() => handleBulkExclude(true)}>Mua hộ/Loại trừ</button>
               <button className="btn btn-secondary" style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem' }} onClick={() => handleBulkExclude(false)}>Tính cá nhân</button>
+              <button className="btn btn-secondary" style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem' }} onClick={() => handleBulkHide(true)} title="Ẩn các giao dịch đã chọn"><EyeOff size={14} /> Ẩn đã chọn</button>
+              <button className="btn btn-secondary" style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem' }} onClick={() => handleBulkHide(false)} title="Hiện các giao dịch đã chọn"><Eye size={14} /> Hiện lại</button>
               <button className="btn btn-secondary" style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', color: 'var(--color-primary)' }} onClick={() => setShowGroupCreate(true)}>Tạo Nhóm mới</button>
 
               {selectedIds.length === 1 && (
@@ -683,53 +1219,18 @@ Số giao dịch: ${sortedTransactions.length}
           </div>
         )}
 
-      {/* Group Totals Summary Card */}
+      {/* Group & Bank Totals Summary Cards */}
       {processedTransactions.length > 0 && (
-        <div className="glass-card" style={{ padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', backdropFilter: 'none' }}>
-          <div style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-            <span>Tổng chi phí theo Nhóm trong bộ lọc:</span>
-          </div>
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-            {/* Personal Card */}
-            {groupTotals.personal > 0 && (
-              <div style={{
-                backgroundColor: 'var(--bg-secondary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: 'var(--border-radius-sm)',
-                padding: '0.5rem 0.75rem',
-                fontSize: '0.8rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem'
-              }}>
-                <span style={{ color: 'var(--text-secondary)' }}>👤 Cá nhân:</span>
-                <strong style={{ color: 'var(--color-danger)' }}>{groupTotals.personal.toLocaleString('vi-VN')} VND</strong>
-              </div>
-            )}
-
-            {/* Ungrouped Excluded (Mua hộ tự do) */}
-            {groupTotals.personal_exclude > 0 && (
-              <div style={{
-                backgroundColor: 'var(--bg-secondary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: 'var(--border-radius-sm)',
-                padding: '0.5rem 0.75rem',
-                fontSize: '0.8rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem'
-              }}>
-                <span style={{ color: 'var(--text-secondary)' }}>📦 Mua hộ tự do:</span>
-                <strong style={{ color: 'var(--color-warning)' }}>{groupTotals.personal_exclude.toLocaleString('vi-VN')} VND</strong>
-              </div>
-            )}
-
-            {/* Custom Groups */}
-            {groups.map(g => {
-              const total = groupTotals[g.id] || 0;
-              if (total === 0) return null;
-              return (
-                <div key={g.id} style={{
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
+          {/* Group Totals Card */}
+          <div className="glass-card" style={{ padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', backdropFilter: 'none' }}>
+            <div style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <span>👥 Tổng dư nợ theo Nhóm:</span>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              {/* Personal Card */}
+              {groupTotals.personal !== 0 && (
+                <div style={{
                   backgroundColor: 'var(--bg-secondary)',
                   border: '1px solid var(--border-color)',
                   borderRadius: 'var(--border-radius-sm)',
@@ -739,16 +1240,98 @@ Số giao dịch: ${sortedTransactions.length}
                   alignItems: 'center',
                   gap: '0.5rem'
                 }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>👥 {g.name}:</span>
-                  <strong style={{ color: 'var(--color-primary)' }}>{total.toLocaleString('vi-VN')} VND</strong>
+                  <span style={{ color: 'var(--text-secondary)' }}>👤 Cá nhân:</span>
+                  <strong style={{ color: 'var(--color-danger)' }}>{groupTotals.personal.toLocaleString('vi-VN')} VND</strong>
                 </div>
-              );
-            })}
+              )}
 
-            {/* If no expenses at all */}
-            {groupTotals.personal === 0 && groupTotals.personal_exclude === 0 && groups.every(g => (groupTotals[g.id] || 0) === 0) && (
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>Không có phát sinh chi phí (-) nào trong bộ lọc này.</span>
-            )}
+              {/* Ungrouped Excluded (Mua hộ tự do) */}
+              {groupTotals.personal_exclude !== 0 && (
+                <div style={{
+                  backgroundColor: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--border-radius-sm)',
+                  padding: '0.5rem 0.75rem',
+                  fontSize: '0.8rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem'
+                }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>📦 Mua hộ tự do:</span>
+                  <strong style={{ color: 'var(--color-warning)' }}>{groupTotals.personal_exclude.toLocaleString('vi-VN')} VND</strong>
+                </div>
+              )}
+
+              {/* Custom Groups */}
+              {groups.map(g => {
+                const total = groupTotals[g.id] || 0;
+                if (total === 0) return null;
+                return (
+                  <div key={g.id} style={{
+                    backgroundColor: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 'var(--border-radius-sm)',
+                    padding: '0.5rem 0.75rem',
+                    fontSize: '0.8rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>👥 {g.name}:</span>
+                    <strong style={{ color: 'var(--color-primary)' }}>{total.toLocaleString('vi-VN')} VND</strong>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Bank Debt Breakdown Card */}
+          <div className="glass-card" style={{ padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', backdropFilter: 'none' }}>
+            <div style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>🏦 Tổng dư nợ theo Ngân hàng:</span>
+              {selectedBankFilter !== 'all' && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-primary)', cursor: 'pointer' }} onClick={() => setSelectedBankFilter('all')}>
+                  Xem tất cả
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              {bankTotals.map(bt => (
+                <div
+                  key={bt.bank}
+                  onClick={() => setSelectedBankFilter(bt.bank === selectedBankFilter ? 'all' : bt.bank)}
+                  style={{
+                    backgroundColor: selectedBankFilter === bt.bank ? 'rgba(99, 102, 241, 0.15)' : 'var(--bg-secondary)',
+                    border: selectedBankFilter === bt.bank ? '1.5px solid var(--color-primary)' : '1px solid var(--border-color)',
+                    borderRadius: 'var(--border-radius-sm)',
+                    padding: '0.5rem 0.75rem',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.2rem',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title="Nhấp để lọc giao dịch theo ngân hàng này"
+                >
+                  <div style={{ fontWeight: '600', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span>🏦 {bt.bank}</span>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>({bt.count})</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Dư nợ:</span>
+                    <strong style={{ color: bt.netDebt >= 0 ? 'var(--color-danger)' : 'var(--color-success)' }}>
+                      {bt.netDebt.toLocaleString('vi-VN')} VND
+                    </strong>
+                  </div>
+                  {bt.refund > 0 && (
+                    <div style={{ fontSize: '0.7rem', color: 'var(--color-success)' }}>
+                      (Đã trừ hoàn tiền: -{bt.refund.toLocaleString('vi-VN')} VND)
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -780,10 +1363,10 @@ Số giao dịch: ${sortedTransactions.length}
       )}
 
       {/* Main Table */}
-      <div className="table-container">
+      <div className="table-container" style={{ maxHeight: '620px', overflow: 'auto', borderRadius: 'var(--border-radius-md)', border: '1px solid var(--border-color)' }}>
         {sortedTransactions.length > 0 ? (
           <table className="table-el">
-            <thead>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-card)' }}>
               <tr>
                 <th style={{ width: '40px', textAlign: 'center' }} className="print-hide">
                   <button
@@ -834,271 +1417,48 @@ Số giao dịch: ${sortedTransactions.length}
                     {visibleColumns.actions && <td className="print-hide"><div className="skeleton-line" style={{ width: '50px', margin: '0 auto' }}></div></td>}
                   </tr>
                 ))
+              ) : groupBy === 'none' ? (
+                sortedTransactions.map((tx) => renderTransactionRow(tx, false))
               ) : (
-                sortedTransactions.map((tx) => {
-                  const isSelected = selectedIds.includes(tx.id);
-                  const categoryObj = categories.find(c => c.id === tx.category);
-                  const groupObj = groups.find(g => g.id === tx.groupId);
-
-                  if (tx.id === inlineEditingId) {
-                    return (
-                      <tr key={tx.id} style={{ backgroundColor: 'rgba(99, 102, 241, 0.1)' }}>
-                        <td style={{ textAlign: 'center' }} className="print-hide">
-                          <button disabled style={{ background: 'none', border: 'none', padding: 0, opacity: 0.3 }}>
-                            <Square size={18} />
-                          </button>
-                        </td>
-                        <td>
-                          <input
-                            type="date"
-                            className="input-inline"
-                            value={inlineDate}
-                            onChange={e => setInlineDate(e.target.value)}
-                          />
-                        </td>
-                        {visibleColumns.bank && (
-                          <td>
-                            <input
-                              type="text"
-                              className="input-inline"
-                              value={tx.bank}
-                              disabled
-                              style={{ opacity: 0.7 }}
-                            />
-                          </td>
-                        )}
-                        {visibleColumns.cardType && (
-                          <td>
-                            <select
-                              className="select-inline"
-                              value={inlineCardType}
-                              onChange={e => setInlineCardType(e.target.value)}
-                            >
-                              <option value="none">Không có badge</option>
-                              <option value="VISA">VISA</option>
-                              <option value="MASTER">MASTER</option>
-                              <option value="JCB">JCB</option>
-                            </select>
-                          </td>
-                        )}
-                        <td>
-                          <input
-                            type="text"
-                            className="input-inline"
-                            value={inlineDesc}
-                            onChange={e => setInlineDesc(e.target.value)}
-                          />
-                        </td>
-                        <td>
-                          <select
-                            className="select-inline"
-                            value={inlineCategory}
-                            onChange={e => setInlineCategory(e.target.value)}
-                          >
-                            <option value="">-- Chọn danh mục --</option>
-                            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                          </select>
-                        </td>
-                        <td>
-                          <select
-                            className="select-inline"
-                            value={inlineGroupId}
-                            onChange={e => setInlineGroupId(e.target.value)}
-                          >
-                            <option value="none">Cá nhân</option>
-                            {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                          </select>
-                        </td>
-                        <td style={{ textAlign: 'right' }}>
-                          <input
-                            type="number"
-                            className="input-inline"
-                            value={inlineAmount}
-                            onChange={e => setInlineAmount(parseFloat(e.target.value) || 0)}
-                            style={{ textAlign: 'right', fontWeight: 'bold' }}
-                          />
-                        </td>
-                        {visibleColumns.classification && (
-                          <td>
-                            <label className="switch" style={{ transform: 'scale(0.8)' }}>
-                              <input
-                                type="checkbox"
-                                checked={inlineExclude || inlineGroupId !== 'none'}
-                                onChange={e => setInlineExclude(e.target.checked)}
-                                disabled={inlineGroupId !== 'none'}
-                              />
-                              <span className="slider"></span>
-                            </label>
-                          </td>
-                        )}
-                        {visibleColumns.actions && (
-                          <td className="print-hide">
-                            <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'center' }}>
-                              <button
-                                className="btn btn-ghost"
-                                style={{ padding: '0.25rem', fontSize: '1rem', color: 'var(--color-success)', cursor: 'pointer' }}
-                                onClick={() => handleSaveInlineEdit(tx)}
-                                title="Lưu"
-                              >
-                                💾
-                              </button>
-                              <button
-                                className="btn btn-ghost"
-                                style={{ padding: '0.25rem', fontSize: '1rem', color: 'var(--color-danger)', cursor: 'pointer' }}
-                                onClick={() => setInlineEditingId(null)}
-                                title="Hủy"
-                              >
-                                ❌
-                              </button>
-                            </div>
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  }
-
+                groupedSections.map((sec) => {
+                  const isCollapsed = collapsedGroups[sec.key];
                   return (
-                    <tr key={tx.id} style={{ backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.05)' : undefined }}>
-                      <td style={{ textAlign: 'center' }} className="print-hide">
-                        <button
-                          onClick={() => handleToggleSelect(tx.id)}
-                          style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignContent: 'center', color: isSelected ? 'var(--color-primary)' : 'var(--text-tertiary)' }}
-                        >
-                          {isSelected ? <CheckSquare size={18} /> : <Square size={18} />}
-                        </button>
-                      </td>
-                      <td style={{ whiteSpace: 'nowrap' }}>{formatDateDisplay(tx.date)}</td>
-                      {visibleColumns.bank && (
-                        <td style={{ whiteSpace: 'nowrap', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{tx.bank}</td>
-                      )}
-                      {visibleColumns.cardType && (
-                        <td style={{ whiteSpace: 'nowrap' }}>
-                          {tx.cardType ? (
-                            <span
-                              className="badge"
-                              style={{
-                                backgroundColor: tx.cardType === 'VISA' ? 'rgba(59, 130, 246, 0.15)' :
-                                  tx.cardType === 'MASTER' ? 'rgba(249, 115, 22, 0.15)' :
-                                    'rgba(16, 185, 129, 0.15)',
-                                color: tx.cardType === 'VISA' ? '#3b82f6' :
-                                  tx.cardType === 'MASTER' ? '#f97316' :
-                                    '#10b981',
-                                fontWeight: 'bold'
-                              }}
-                            >
-                              {tx.cardType}
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>-</span>
-                          )}
-                        </td>
-                      )}
-                      <td>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', alignItems: 'flex-start' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
-                            <span style={{ fontWeight: '500' }}>{tx.description}</span>
-                            {tx.isInstallment && (
-                              <span
-                                className="tooltip-container"
-                                style={{
-                                  fontSize: '0.7rem',
-                                  backgroundColor: 'rgba(245, 158, 11, 0.12)',
-                                  color: 'var(--color-warning)',
-                                  fontWeight: 'bold',
-                                  border: '1px solid rgba(245, 158, 11, 0.25)',
-                                  padding: '0.05rem 0.3rem',
-                                  borderRadius: '4px',
-                                  cursor: 'help',
-                                  display: 'inline-flex',
-                                  alignItems: 'center'
-                                }}
-                              >
-                                Trả góp
-                                <span className="tooltip-text">
-                                  Dư nợ gốc còn lại: {tx.remainingBalance?.toLocaleString('vi-VN')} VND
-                                </span>
+                    <React.Fragment key={sec.key}>
+                      {/* Parent Group Header Row */}
+                      <tr
+                        onClick={() => toggleGroupCollapse(sec.key)}
+                        style={{
+                          backgroundColor: 'var(--bg-secondary)',
+                          borderLeft: '4px solid var(--color-primary)',
+                          cursor: 'pointer',
+                          fontWeight: '600'
+                        }}
+                      >
+                        <td colSpan={totalColumnCount} style={{ padding: '0.65rem 1rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                              <span style={{ fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: 'bold' }}>{sec.label}</span>
+                              <span className="badge" style={{ backgroundColor: 'rgba(99, 102, 241, 0.12)', color: 'var(--color-primary)', fontSize: '0.75rem', padding: '0.15rem 0.5rem', borderRadius: '12px' }}>
+                                {sec.count} giao dịch
                               </span>
-                            )}
-                          </div>
-                          {tx.isSplit && (
-                            <span style={{ fontSize: '0.7rem', color: 'var(--color-primary)', fontWeight: 'bold' }}>
-                              [Đã chia nhỏ từ GD gốc: {tx.originalAmount.toLocaleString('vi-VN')} VND]
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td>
-                        {categoryObj && (
-                          <span
-                            className="badge"
-                            style={{ backgroundColor: `${categoryObj.color}15`, color: categoryObj.color }}
-                          >
-                            {categoryObj.name}
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        {groupObj ? (
-                          <span className="badge badge-primary">
-                            <Group size={10} style={{ marginRight: '0.2rem' }} />
-                            {groupObj.name}
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>Cá nhân</span>
-                        )}
-                      </td>
-                      <td style={{
-                        textAlign: 'right',
-                        fontWeight: '700',
-                        color: tx.amount > 0 ? 'var(--color-success)' : 'var(--color-danger)',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        {tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString('vi-VN')} VND
-                      </td>
-                      {visibleColumns.classification && (
-                        <td>
-                          {tx.excludeFromPersonal || tx.groupId ? (
-                            <span className="badge badge-warning">Mua hộ / Nhóm</span>
-                          ) : (
-                            <span className="badge badge-success">Cá nhân</span>
-                          )}
-                        </td>
-                      )}
-                      {visibleColumns.actions && (
-                        <td className="print-hide">
-                          <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'center' }}>
-                            <button
-                              className="btn btn-ghost"
-                              style={{ padding: '0.25rem', borderRadius: 'var(--border-radius-sm)', color: 'var(--text-secondary)' }}
-                              onClick={() => handleStartInlineEdit(tx)}
-                              title="Sửa thông tin"
-                            >
-                              <Edit2 size={14} />
-                            </button>
-                            <button
-                              className="btn btn-ghost"
-                              style={{ padding: '0.25rem', borderRadius: 'var(--border-radius-sm)', color: 'var(--text-secondary)' }}
-                              onClick={() => handleOpenBulkScan(tx)}
-                              title="Gán nhanh giao dịch tương tự (Scan)"
-                            >
-                              <Sparkles size={14} />
-                            </button>
-                            {tx.amount < 0 && !tx.isSplit && (
-                              <button
-                                className="btn btn-ghost"
-                                style={{ padding: '0.25rem', borderRadius: 'var(--border-radius-sm)', color: 'var(--text-secondary)' }}
-                                onClick={() => handleOpenSplit(tx)}
-                                title="Tách giao dịch (Split)"
-                              >
-                                <Split size={14} />
-                              </button>
-                            )}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 'normal' }}>Tổng dư nợ nhóm này:</span>
+                              <strong style={{ fontSize: '0.95rem', color: sec.netDebt >= 0 ? 'var(--color-danger)' : 'var(--color-success)' }}>
+                                {sec.netDebt.toLocaleString('vi-VN')} VND
+                              </strong>
+                            </div>
                           </div>
                         </td>
-                      )}
-                    </tr>
+                      </tr>
+
+                      {/* Child Rows */}
+                      {!isCollapsed && sec.transactions.map((tx) => renderTransactionRow(tx, true))}
+                    </React.Fragment>
                   );
-                }))}
+                })
+              )}
             </tbody>
           </table>
         ) : (
@@ -1139,7 +1499,7 @@ Số giao dịch: ${sortedTransactions.length}
                   {statementPeriods.some(p => archivedPeriods.includes(p.key)) && (
                     <optgroup label="Kho Lưu trữ (Archive)">
                       {statementPeriods.filter(p => archivedPeriods.includes(p.key)).map(p => (
-                        <option key={p.key} value={p.key}>📁 {p.label} (Đã lưu trữ)</option>
+                        <option key={p.key} value={p.key}>{p.label} (Đã lưu trữ)</option>
                       ))}
                     </optgroup>
                   )}
@@ -1162,6 +1522,28 @@ Số giao dịch: ${sortedTransactions.length}
                   <option value="all">Tất cả các nhóm</option>
                   <option value="none">Cá nhân</option>
                   {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              </div>
+
+              {/* Bank Filter */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <label style={{ fontWeight: '600', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Ngân hàng</label>
+                <select value={selectedBankFilter} onChange={(e) => setSelectedBankFilter(e.target.value)}>
+                  <option value="all">Tất cả ngân hàng</option>
+                  {availableBanks.map(b => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Toolbar Position Selector */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <label style={{ fontWeight: '600', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Vị trí thanh công cụ:</label>
+                <select value={toolbarPosition} onChange={(e) => setToolbarPosition(e.target.value as any)}>
+                  <option value="top">Trên cùng (Mặc định)</option>
+                  <option value="bottom">Dưới cùng màn hình (Floating Bottom)</option>
+                  <option value="left">Cạnh Trái (Sidebar Trái)</option>
+                  <option value="right">Cạnh Phải (Sidebar Phải)</option>
                 </select>
               </div>
 

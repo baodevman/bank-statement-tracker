@@ -13,6 +13,8 @@ export interface Transaction {
   cardType?: string | null;
   isInstallment?: boolean;
   remainingBalance?: number;
+  isRefund?: boolean;
+  isHidden?: boolean;
 }
 
 export interface Group {

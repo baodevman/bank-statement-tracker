@@ -222,6 +222,45 @@ export function detectTemplateAndMapping(
 
   console.log("DEBUG: detectTemplateAndMapping fullText excerpt:", fullText.slice(0, 1000));
 
+  // Auto-detect Shinhan Bank (uses dedicated dynamic parser)
+  if (fullText.includes('shinhan')) {
+    return {
+      bank: 'Shinhan Bank',
+      mapping: {
+        dateCol: 0,
+        descCol: 1,
+        amountCol: 2
+      },
+      templateId: 'predefined_shinhan_bank'
+    };
+  }
+
+  // Auto-detect BVBank / BVB (Bản Việt)
+  if (fullText.includes('bvbank') || fullText.includes('bvb') || fullText.includes('bản việt') || fullText.includes('viet capital')) {
+    return {
+      bank: 'BVBank (Bản Việt)',
+      mapping: {
+        dateCol: 0,
+        descCol: 1,
+        amountCol: 2
+      },
+      templateId: 'predefined_bvbank'
+    };
+  }
+
+  // Auto-detect OCB / Liobank
+  if (fullText.includes('ocb') || fullText.includes('liobank') || fullText.includes('phương đông')) {
+    return {
+      bank: fullText.includes('liobank') ? 'Liobank (OCB)' : 'OCB Bank',
+      mapping: {
+        dateCol: 0,
+        descCol: 1,
+        amountCol: 2
+      },
+      templateId: 'predefined_ocb_bank'
+    };
+  }
+
   for (const template of templates) {
     const detectKws = template.detectKeywords || [template.bankName];
     const matchesBank = detectKws.some(kw => fullText.includes(kw.toLowerCase()));
@@ -376,16 +415,33 @@ export function parseTransactionsFromRaw(
   
   // Custom Parser for Shinhan Bank statements
   if (bankName.toLowerCase().includes('shinhan')) {
-    let currentSection: 'purchase' | 'installment' | 'other' = 'purchase';
+    let currentSection: 'header' | 'purchase' | 'installment' | 'other' = 'header';
     
+    // Explicit metadata keywords to ignore top of statement / summary info (Statement Date, Payment Due Date, Credit Limit, etc.)
+    const metadataKeywords = [
+      'ngày lập sao kê', 'statement date',
+      'ngày đến hạn', 'due date', 'payment due date',
+      'hạn mức tín dụng', 'credit limit',
+      'dư nợ kỳ trước', 'previous balance',
+      'dư nợ cuối kỳ', 'closing balance', 'new balance',
+      'tổng số tiền thanh toán', 'total amount due',
+      'thanh toán tối thiểu', 'minimum payment due',
+      'số tài khoản', 'account number', 'số thẻ', 'card number',
+      'họ và tên', 'customer name', 'tên khách hàng',
+      'địa chỉ', 'address',
+      'điểm thưởng', 'reward points', 'cashback', 'lũy kế', 'phát sinh trong kỳ'
+    ];
+
     rawRows.forEach((row) => {
       const rowStr = row.cells.join(' ').toLowerCase();
       
-      // Update section state based on headings
+      // Update section state based on headings or table column headers
       if (rowStr.includes('mua hàng') || rowStr.includes('purchase & cash') || rowStr.includes('cash advance') ||
-          rowStr.includes('chi tiết giao dịch') || rowStr.includes('transaction summary') || rowStr.includes('transaction details')) {
-        currentSection = 'purchase';
-        return;
+          rowStr.includes('chi tiết giao dịch') || rowStr.includes('transaction summary') || rowStr.includes('transaction details') ||
+          rowStr.includes('giao dịch trong kỳ') || rowStr.includes('ngày giao dịch') || rowStr.includes('transaction date')) {
+        if (!rowStr.includes('trả góp') && !rowStr.includes('installment')) {
+          currentSection = 'purchase';
+        }
       }
       if (rowStr.includes('trả góp') || rowStr.includes('installment')) {
         currentSection = 'installment';
@@ -407,6 +463,11 @@ export function parseTransactionsFromRaw(
         currentSection = 'other';
         return;
       }
+
+      // Ignore metadata rows (Statement Date, Payment Due Date, Credit Limit, Customer Info, etc.)
+      if (metadataKeywords.some(kw => rowStr.includes(kw))) {
+        return;
+      }
       
       // Ignore header rows and card numbers
       const isCardHeader = row.cells.some(cell => 
@@ -419,6 +480,9 @@ export function parseTransactionsFromRaw(
         cell.toLowerCase().includes('post date')
       );
       if (isCardHeader) return;
+      
+      // Skip if we are still in top statement header section
+      if (currentSection === 'header') return;
       
       // We need at least Date and Amount
       if (row.cells.length < 2) return;
@@ -453,9 +517,6 @@ export function parseTransactionsFromRaw(
       
       if (amount === 0 || amountCellIdx === -1) return;
       
-      // Spending is always negative (expense)
-      amount = -Math.abs(amount);
-      
       // Card brand check
       let itemCardType = cardType;
       const textForCardCheck = row.cells.join(' ').toLowerCase();
@@ -485,19 +546,35 @@ export function parseTransactionsFromRaw(
         
         if (!description) return;
         
+        // Check for refund / reversal / cancellation
+        const textForRefund = (description + ' ' + textForCardCheck).toLowerCase();
+        const isRefundTx = textForRefund.includes('hoàn tiền') || textForRefund.includes('hủy giao dịch') ||
+          textForRefund.includes('hoàn') || textForRefund.includes('refund') ||
+          textForRefund.includes('reversal') || textForRefund.includes('cancel') ||
+          textForRefund.includes('void') || textForRefund.includes('return') ||
+          row.cells[amountCellIdx]?.includes('CR') || (row.cells[amountCellIdx]?.startsWith('-') && !textForRefund.includes('mua hàng'));
+
+        if (isRefundTx) {
+          amount = Math.abs(amount); // Positive credit/refund amount
+        } else {
+          // Spending is always negative (expense)
+          amount = -Math.abs(amount);
+        }
+
         transactions.push({
           id: `${statementId}_shinhan_purchase_${row.index}_${amount}`,
           date: transactionDate,
           description: description.replace(/\s+/g, ' ').trim(),
           amount,
           originalAmount: amount,
-          category: 'others',
+          category: isRefundTx ? 'income' : 'others',
           groupId: null,
           excludeFromPersonal: false,
           isSplit: false,
           statementId,
           bank: bankName,
           cardType: itemCardType,
+          isRefund: isRefundTx,
         });
       } else if (currentSection === 'installment') {
         // Adaptively find the merchant name, handling potential cell merging (e.g. "28-04-2026 Shopee")
@@ -514,6 +591,8 @@ export function parseTransactionsFromRaw(
         
         if (!description) return;
         
+        amount = -Math.abs(amount);
+
         // Remaining Principal is typically at index 3 in standard 7-cell installment row
         // If date and merchant were merged, the array length is 6, so index 2 is Remaining Principal!
         const remainingIdx = stripped ? dateCellIdx + 2 : dateCellIdx + 3;
@@ -544,6 +623,282 @@ export function parseTransactionsFromRaw(
     // Sort transactions by date ascending
     transactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     console.log("Shinhan Dynamic Parsed Transactions:", transactions);
+    return transactions;
+  }
+
+  // Custom Parser for BVBank / Bản Việt
+  if (bankName.toLowerCase().includes('bvbank') || bankName.toLowerCase().includes('bản việt') || bankName.toLowerCase().includes('bvb') || bankName.toLowerCase().includes('viet capital')) {
+    let inTransactionSection = false;
+
+    const metadataKeywords = [
+      'dư nợ kỳ trước', 'previous balance',
+      'dư nợ cuối kỳ', 'closing balance', 'new balance',
+      'tổng số tiền thanh toán', 'total amount due',
+      'thanh toán tối thiểu', 'minimum payment due',
+      'hạn mức tín dụng', 'credit limit',
+      'ngày đến hạn', 'payment due date',
+      'ngày lập sao kê', 'statement date',
+      'tổng cộng phát sinh', 'tổng số tiền phát sinh',
+      'dư nợ đầu kỳ', 'bảng tổng hợp', 'tổng kết'
+    ];
+
+    rawRows.forEach((row) => {
+      const rowText = row.cells.join(' ').toLowerCase();
+
+      // Check if we reached the main transaction details table header
+      if (
+        rowText.includes('chi tiết giao dịch') ||
+        rowText.includes('nội dung giao dịch') ||
+        rowText.includes('diễn giải') ||
+        (rowText.includes('ngày giao dịch') && rowText.includes('ngày bút toán')) ||
+        rowText.includes('transaction details')
+      ) {
+        // Skip header line itself, enable parsing
+        inTransactionSection = true;
+        return;
+      }
+
+      // Skip summary / metadata header section if main transaction header hasn't been passed yet
+      if (!inTransactionSection) {
+        return;
+      }
+
+      // Skip summary metadata rows at bottom or between sections
+      if (metadataKeywords.some(kw => rowText.includes(kw))) {
+        return;
+      }
+
+      // Skip header repetitions or card number lines
+      const isHeaderRow = row.cells.some(cell => {
+        const c = cell.toLowerCase();
+        return c.includes('ngày giao dịch') || c.includes('ngày bút toán') || c.includes('chi tiết') || c.includes('số tiền') || c.includes('số dư');
+      });
+      if (isHeaderRow) return;
+
+      // Need at least 2 cells
+      if (row.cells.length < 2) return;
+
+      // Find Date Cell
+      let transactionDate = '';
+      let dateCellIdx = -1;
+      for (let i = 0; i < row.cells.length; i++) {
+        const d = formatDate(row.cells[i]);
+        if (d && row.cells[i].trim().length <= 25) {
+          transactionDate = d;
+          dateCellIdx = i;
+          break;
+        }
+      }
+
+      if (!transactionDate || dateCellIdx === -1) return;
+
+      // Find description and amounts dynamically
+      let description = '';
+      const numCells: { idx: number; val: number; raw: string }[] = [];
+
+      for (let i = dateCellIdx + 1; i < row.cells.length; i++) {
+        const cellRaw = row.cells[i].trim();
+        if (!cellRaw) continue;
+
+        // Skip post date if cell is another date
+        const d = formatDate(cellRaw);
+        if (d) continue;
+
+        const amountVal = parseAmount(cellRaw);
+        const isNumeric = !isNaN(Number(cellRaw.replace(/[.,\sđVNDvnd$]/g, '')));
+
+        if (isNumeric && amountVal !== 0) {
+          numCells.push({ idx: i, val: amountVal, raw: cellRaw });
+        } else if (!description && (!isNumeric || (cellRaw.length > 3 && !cellRaw.includes('.')))) {
+          // Keep text as description (if it's not just "0" or a row index)
+          if (cellRaw !== '0' && cellRaw !== '1' && cellRaw !== '2') {
+            description = cellRaw;
+          }
+        }
+      }
+
+      if (!description || description === '0') return;
+
+      let amount = 0;
+      if (numCells.length === 1) {
+        amount = numCells[0].val;
+      } else if (numCells.length >= 2) {
+        const first = numCells[0].val;
+        const second = numCells[1].val;
+        if (first !== 0) {
+          amount = -Math.abs(first);
+        } else if (second !== 0) {
+          amount = Math.abs(second);
+        }
+      }
+
+      if (amount === 0 && numCells.length > 0) {
+        amount = numCells[0].val;
+      }
+
+      if (amount === 0) return;
+
+      // Refund check
+      const descLower = description.toLowerCase();
+      const isRefundTx = descLower.includes('hoàn tiền') || descLower.includes('hủy giao dịch') ||
+        descLower.includes('hoàn') || descLower.includes('refund') ||
+        descLower.includes('reversal') || rowText.includes('cr');
+
+      if (isRefundTx) {
+        amount = Math.abs(amount);
+      } else if (numCells.length === 1 && !rowText.includes('cr') && amount > 0) {
+        amount = -Math.abs(amount);
+      }
+
+      transactions.push({
+        id: `${statementId}_bvbank_${row.index}_${amount}`,
+        date: transactionDate,
+        description: description.replace(/\s+/g, ' ').trim(),
+        amount,
+        originalAmount: amount,
+        category: (amount > 0 || isRefundTx) ? 'income' : 'others',
+        groupId: null,
+        excludeFromPersonal: false,
+        isSplit: false,
+        statementId,
+        bank: bankName,
+        cardType: cardType,
+        isRefund: isRefundTx || amount > 0,
+      });
+    });
+
+    transactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    console.log("BVBank Dynamic Parsed Transactions:", transactions);
+    return transactions;
+  }
+
+  // Custom Parser for Liobank / OCB
+  if (bankName.toLowerCase().includes('liobank') || bankName.toLowerCase().includes('ocb') || bankName.toLowerCase().includes('phương đông')) {
+    const metadataKeywords = [
+      'sao kê tài khoản', 'account statement',
+      'tổng tiền vào', 'total credit',
+      'tổng tiền ra', 'total debit',
+      'số dư đầu kỳ', 'opening balance',
+      'số dư cuối kỳ', 'closing balance',
+      'hạn mức tín dụng', 'credit limit',
+      'ngày lập sao kê', 'statement date'
+    ];
+
+    rawRows.forEach((row) => {
+      const rowText = row.cells.join(' ').toLowerCase();
+
+      // Skip metadata summary rows
+      if (metadataKeywords.some(kw => rowText.includes(kw))) {
+        return;
+      }
+
+      // Skip header rows
+      const isHeaderRow = row.cells.some(cell => {
+        const c = cell.toLowerCase();
+        return c.includes('ngày giao dịch') || c.includes('ngày bút toán') ||
+          c.includes('nội dung') || c.includes('chi tiết') ||
+          c.includes('ghi nợ') || c.includes('ghi có') ||
+          c.includes('tiền vào') || c.includes('tiền ra') ||
+          c.includes('số tiền') || c.includes('số dư');
+      });
+      if (isHeaderRow) return;
+
+      if (row.cells.length < 2) return;
+
+      // Find Date Cell
+      let transactionDate = '';
+      let dateCellIdx = -1;
+      for (let i = 0; i < row.cells.length; i++) {
+        const d = formatDate(row.cells[i]);
+        if (d && row.cells[i].trim().length <= 25) {
+          transactionDate = d;
+          dateCellIdx = i;
+          break;
+        }
+      }
+
+      if (!transactionDate || dateCellIdx === -1) return;
+
+      // Find description and Debit/Credit amounts
+      let description = '';
+      const numericCells: { idx: number; val: number; raw: string }[] = [];
+
+      for (let i = dateCellIdx + 1; i < row.cells.length; i++) {
+        const cellRaw = row.cells[i].trim();
+        if (!cellRaw) continue;
+
+        const d = formatDate(cellRaw);
+        if (d) continue;
+
+        const amountVal = parseAmount(cellRaw);
+        const isNumeric = !isNaN(Number(cellRaw.replace(/[.,\sđVNDvnd$]/g, '')));
+
+        if (isNumeric && cellRaw !== '0') {
+          numericCells.push({ idx: i, val: amountVal, raw: cellRaw });
+        } else if (!description && !isNumeric) {
+          description = cellRaw;
+        }
+      }
+
+      if (!description) return;
+
+      let amount = 0;
+      if (numericCells.length === 1) {
+        const raw = numericCells[0].raw;
+        if (raw.startsWith('-') || rowText.includes('ghi nợ') || rowText.includes('tiền ra')) {
+          amount = -Math.abs(numericCells[0].val);
+        } else {
+          if (rowText.includes('ghi có') || rowText.includes('tiền vào') || rowText.includes('cr')) {
+            amount = Math.abs(numericCells[0].val);
+          } else {
+            amount = -Math.abs(numericCells[0].val);
+          }
+        }
+      } else if (numericCells.length >= 2) {
+        const firstVal = Math.abs(numericCells[0].val);
+        const secondVal = Math.abs(numericCells[1].val);
+
+        if (firstVal > 0 && (numericCells.length === 2 || secondVal === 0 || numericCells[0].idx < numericCells[1].idx)) {
+          if (numericCells.length === 2) {
+            if (rowText.includes('ghi có') || rowText.includes('tiền vào')) {
+              amount = firstVal;
+            } else {
+              amount = -firstVal;
+            }
+          } else {
+            amount = -firstVal;
+          }
+        } else if (secondVal > 0) {
+          amount = secondVal;
+        }
+      }
+
+      if (amount === 0) return;
+
+      const descLower = description.toLowerCase();
+      const isRefundTx = descLower.includes('hoàn tiền') || descLower.includes('hủy giao dịch') ||
+        descLower.includes('hoàn') || descLower.includes('refund') ||
+        descLower.includes('reversal') || rowText.includes('cr') || amount > 0;
+
+      transactions.push({
+        id: `${statementId}_liobank_${row.index}_${amount}`,
+        date: transactionDate,
+        description: description.replace(/\s+/g, ' ').trim(),
+        amount: isRefundTx ? Math.abs(amount) : -Math.abs(amount),
+        originalAmount: isRefundTx ? Math.abs(amount) : -Math.abs(amount),
+        category: (amount > 0 || isRefundTx) ? 'income' : 'others',
+        groupId: null,
+        excludeFromPersonal: false,
+        isSplit: false,
+        statementId,
+        bank: bankName,
+        cardType: cardType,
+        isRefund: isRefundTx || amount > 0,
+      });
+    });
+
+    transactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    console.log("Liobank/OCB Dynamic Parsed Transactions:", transactions);
     return transactions;
   }
   
@@ -609,8 +964,19 @@ export function parseTransactionsFromRaw(
     // Skip transaction rows where amount is 0 (likely header or sub-header lines that matched date regex)
     if (amount === 0) return;
     
-    // Detect per-transaction card type if description contains specific keywords
+    // Check for refund / reversal / cancellation
     const descLower = description.toLowerCase();
+    const isRefundTx = descLower.includes('hoàn tiền') || descLower.includes('hủy giao dịch') ||
+      descLower.includes('hoàn') || descLower.includes('refund') ||
+      descLower.includes('reversal') || descLower.includes('cancel') ||
+      descLower.includes('void') || descLower.includes('return') ||
+      rowText.includes('cr') || amount > 0;
+
+    if (isRefundTx) {
+      amount = Math.abs(amount);
+    }
+
+    // Detect per-transaction card type if description contains specific keywords
     let itemCardType = cardType;
     if (descLower.includes('visa')) {
       itemCardType = 'VISA';
@@ -626,13 +992,14 @@ export function parseTransactionsFromRaw(
       description: description.replace(/\s+/g, ' ').trim(),
       amount,
       originalAmount: amount,
-      category: amount > 0 ? 'income' : 'others', // defaults
+      category: (amount > 0 || isRefundTx) ? 'income' : 'others', // defaults
       groupId: null,
       excludeFromPersonal: false,
       isSplit: false,
       statementId,
       bank: bankName,
       cardType: itemCardType,
+      isRefund: isRefundTx || amount > 0,
     });
   });
   

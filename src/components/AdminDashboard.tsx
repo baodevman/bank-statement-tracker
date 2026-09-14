@@ -8,7 +8,8 @@ import {
   Plus, 
   RefreshCw,
   Search,
-  Sliders
+  Sliders,
+  CreditCard
 } from 'lucide-react';
 import { 
   fetchAllUsers, 
@@ -507,7 +508,9 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>💳 Chỉ số cột Số thẻ (-1 nếu bỏ):</label>
+                  <label style={{ fontSize: '0.8rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <CreditCard size={14} /> Chỉ số cột Số thẻ (-1 nếu bỏ):
+                  </label>
                   <input 
                     type="number" 
                     value={tCardCol}

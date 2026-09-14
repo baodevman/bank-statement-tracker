@@ -1,1 +1,1 @@
-{"root":["./templates.ts"],"version":"6.0.3"}
+{"root":["./share.ts","./templates.ts"],"version":"6.0.3"}

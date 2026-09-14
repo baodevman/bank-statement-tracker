@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { HelpCircle, Check, X, Info } from 'lucide-react';
+import { HelpCircle, Check, X, Info, Building2, Edit3, CreditCard, Award, FileText, Calendar, RefreshCw, DollarSign, ArrowUpRight, ArrowDownLeft, FileEdit } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 
 // Set worker Src locally
@@ -11,6 +11,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 interface ColumnMapperProps {
   rawRows: string[][];
   pdfBuffer?: ArrayBuffer;
+  password?: string;
   onApply: (mapping: {
     bankName: string;
     cardType: string;
@@ -30,6 +31,7 @@ interface ColumnMapperProps {
 export const ColumnMapper: React.FC<ColumnMapperProps> = ({
   rawRows,
   pdfBuffer,
+  password,
   onApply,
   onCancel,
   existingBanks
@@ -51,6 +53,7 @@ export const ColumnMapper: React.FC<ColumnMapperProps> = ({
       try {
         const loadingTask = pdfjsLib.getDocument({
           data: pdfBuffer.slice(0),
+          password: password,
         });
         const pdfDoc = await loadingTask.promise;
         if (isCancelled) return;
@@ -93,7 +96,7 @@ export const ColumnMapper: React.FC<ColumnMapperProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [pdfBuffer]);
+  }, [pdfBuffer, password]);
   
   const [dateCol, setDateCol] = useState<number>(0);
   const [showSingleAmount, setShowSingleAmount] = useState<boolean>(true);
@@ -115,14 +118,6 @@ export const ColumnMapper: React.FC<ColumnMapperProps> = ({
       alert('Vui lòng chọn hoặc nhập tên ngân hàng để định danh cấu hình.');
       return;
     }
-    if (!cardType.trim()) {
-      alert('Vui lòng nhập loại thẻ (Ví dụ: Hi-Point, Cashback) để lưu mẫu.');
-      return;
-    }
-    if (!cardClass.trim()) {
-      alert('Vui lòng nhập hạng thẻ (Ví dụ: Classic, Gold) để lưu mẫu.');
-      return;
-    }
     
     if (showSingleAmount) {
       if (dateCol === amountCol || dateCol === descCol || amountCol === descCol) {
@@ -138,8 +133,8 @@ export const ColumnMapper: React.FC<ColumnMapperProps> = ({
 
     onApply({
       bankName: finalBank,
-      cardType: cardType.trim(),
-      cardClass: cardClass.trim(),
+      cardType: cardType.trim() || 'Mặc định',
+      cardClass: cardClass.trim() || 'Mặc định',
       dateColIndex: dateCol,
       amountColIndex: showSingleAmount ? amountCol : -1,
       debitColIndex: !showSingleAmount ? debitCol : undefined,
@@ -182,8 +177,8 @@ export const ColumnMapper: React.FC<ColumnMapperProps> = ({
             padding: '0.75rem',
             backgroundColor: 'var(--bg-secondary)'
           }}>
-            <div style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-secondary)' }}>
-              📄 Bản xem trước trang đầu tệp PDF:
+            <div style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <FileText size={16} /> Bản xem trước trang đầu tệp PDF:
             </div>
             
             {renderError ? (
@@ -214,7 +209,9 @@ export const ColumnMapper: React.FC<ColumnMapperProps> = ({
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
             {/* Bank selection */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>🏦 Ngân hàng:</label>
+              <label style={{ fontSize: '0.8rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                <Building2 size={14} /> Ngân hàng:
+              </label>
               <select
                 className="input-field"
                 value={selectedBank}
@@ -229,7 +226,9 @@ export const ColumnMapper: React.FC<ColumnMapperProps> = ({
 
             {selectedBank === 'new' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>✍️ Tên Ngân hàng mới:</label>
+                <label style={{ fontSize: '0.8rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                  <Edit3 size={14} /> Tên Ngân hàng mới:
+                </label>
                 <input 
                   type="text"
                   className="input-field"
@@ -242,22 +241,26 @@ export const ColumnMapper: React.FC<ColumnMapperProps> = ({
 
             {/* Card Details */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>💳 Loại thẻ (Ví dụ: Hi-Point, Lotte...):</label>
+              <label style={{ fontSize: '0.8rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                <CreditCard size={14} /> Thương hiệu / Tổ chức phát hành thẻ (VISA, Mastercard, JCB, Napas...) (Không bắt buộc):
+              </label>
               <input 
                 type="text"
                 className="input-field"
-                placeholder="Nhập loại thẻ..."
+                placeholder="Ví dụ: VISA, Mastercard, JCB..."
                 value={cardType}
                 onChange={(e) => setCardType(e.target.value)}
               />
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>🎖️ Hạng thẻ (Ví dụ: Classic, Platinum...):</label>
+              <label style={{ fontSize: '0.8rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                <Award size={14} /> Hạng thẻ (Platinum, Signature, Gold...) (Không bắt buộc):
+              </label>
               <input 
                 type="text"
                 className="input-field"
-                placeholder="Nhập hạng thẻ..."
+                placeholder="Ví dụ: Platinum, Signature..."
                 value={cardClass}
                 onChange={(e) => setCardClass(e.target.value)}
               />
@@ -280,7 +283,9 @@ export const ColumnMapper: React.FC<ColumnMapperProps> = ({
           {/* Select Column Mappings */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>📅 Ngày giao dịch:</label>
+              <label style={{ fontSize: '0.8rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                <Calendar size={14} /> Ngày giao dịch:
+              </label>
               <select 
                 className="input-field" 
                 value={dateCol} 
@@ -293,7 +298,9 @@ export const ColumnMapper: React.FC<ColumnMapperProps> = ({
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>🔄 Cấu trúc cột Số tiền:</label>
+              <label style={{ fontSize: '0.8rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                <RefreshCw size={14} /> Cấu trúc cột Số tiền:
+              </label>
               <div style={{ display: 'flex', gap: '0.75rem', height: '100%', alignItems: 'center' }}>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem', cursor: 'pointer' }}>
                   <input 
@@ -320,7 +327,9 @@ export const ColumnMapper: React.FC<ColumnMapperProps> = ({
 
             {showSingleAmount ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>💵 Số tiền:</label>
+                <label style={{ fontSize: '0.8rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                  <DollarSign size={14} /> Số tiền:
+                </label>
                 <select 
                   className="input-field" 
                   value={amountCol} 
@@ -334,7 +343,9 @@ export const ColumnMapper: React.FC<ColumnMapperProps> = ({
             ) : (
               <>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                  <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>💸 Cột Ghi nợ (Tiền chi ra -):</label>
+                  <label style={{ fontSize: '0.8rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <ArrowUpRight size={14} /> Cột Ghi nợ (Tiền chi ra -):
+                  </label>
                   <select 
                     className="input-field" 
                     value={debitCol} 
@@ -346,7 +357,9 @@ export const ColumnMapper: React.FC<ColumnMapperProps> = ({
                   </select>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                  <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>💰 Cột Ghi có (Tiền nạp vào +):</label>
+                  <label style={{ fontSize: '0.8rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <ArrowDownLeft size={14} /> Cột Ghi có (Tiền nạp vào +):
+                  </label>
                   <select 
                     className="input-field" 
                     value={creditCol} 
@@ -361,7 +374,9 @@ export const ColumnMapper: React.FC<ColumnMapperProps> = ({
             )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>📝 Chi tiết / Nội dung:</label>
+              <label style={{ fontSize: '0.8rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                <FileEdit size={14} /> Chi tiết / Nội dung:
+              </label>
               <select 
                 className="input-field" 
                 value={descCol} 
@@ -374,7 +389,9 @@ export const ColumnMapper: React.FC<ColumnMapperProps> = ({
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>💳 Số thẻ tín dụng (Tùy chọn):</label>
+              <label style={{ fontSize: '0.8rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                <CreditCard size={14} /> Số thẻ tín dụng (Tùy chọn):
+              </label>
               <select 
                 className="input-field" 
                 value={cardCol} 

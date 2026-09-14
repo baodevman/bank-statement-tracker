@@ -27,17 +27,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
   // Filter transactions by statement (transactions are already filtered centrally)
   const filteredTransactions = transactions;
 
-  // Calculate statistics
+  // Calculate statistics with refund deduction
   const stats = useMemo(() => {
     let totalIncome = 0;
     let totalPersonalExpense = 0;
     let totalGroupExpense = 0;
 
     filteredTransactions.forEach(t => {
-      if (t.amount > 0) {
-        totalIncome += t.amount;
+      const isRefund = t.isRefund || t.amount > 0;
+      const absVal = Math.abs(t.amount);
+
+      if (isRefund) {
+        totalIncome += absVal;
+        if (t.excludeFromPersonal || t.groupId) {
+          totalGroupExpense = Math.max(0, totalGroupExpense - absVal);
+        } else {
+          totalPersonalExpense -= absVal;
+        }
       } else {
-        const absVal = Math.abs(t.amount);
         if (t.excludeFromPersonal || t.groupId) {
           totalGroupExpense += absVal;
         } else {
@@ -52,6 +59,32 @@ export const Dashboard: React.FC<DashboardProps> = ({
       totalGroupExpense,
       netSavings: totalIncome - totalPersonalExpense,
     };
+  }, [filteredTransactions]);
+
+  // Calculate Bank Outstanding Debt Breakdown
+  const bankStats = useMemo(() => {
+    const bankMap: Record<string, { bank: string; spending: number; refund: number; netDebt: number; count: number }> = {};
+
+    filteredTransactions.forEach(t => {
+      const bankName = t.bank || 'Khác / Không rõ';
+      if (!bankMap[bankName]) {
+        bankMap[bankName] = { bank: bankName, spending: 0, refund: 0, netDebt: 0, count: 0 };
+      }
+
+      const isRefund = t.isRefund || t.amount > 0;
+      const absVal = Math.abs(t.amount);
+      bankMap[bankName].count += 1;
+
+      if (isRefund) {
+        bankMap[bankName].refund += absVal;
+        bankMap[bankName].netDebt -= absVal;
+      } else {
+        bankMap[bankName].spending += absVal;
+        bankMap[bankName].netDebt += absVal;
+      }
+    });
+
+    return Object.values(bankMap).sort((a, b) => b.netDebt - a.netDebt);
   }, [filteredTransactions]);
 
   const benefitsValue = useMemo(() => {
@@ -326,6 +359,36 @@ Kỳ sao kê: ${selectedStatement === 'all' ? 'Tất cả các tháng' : selecte
         </div>
 
       </div>
+
+      {/* Bank Debt Breakdown Section */}
+      {bankStats.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }} className="animate-fade-in">
+          <h4 style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)' }}>🏦 Tổng Dư Nợ theo Ngân Hàng</h4>
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', 
+            gap: '1rem' 
+          }}>
+            {bankStats.map(bs => (
+              <div className="glass-card" key={bs.bank} style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.85rem 1rem', borderLeft: '4px solid var(--color-primary)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-primary)' }}>🏦 {bs.bank}</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{bs.count} giao dịch</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Dư nợ ròng:</span>
+                  <h4 style={{ color: bs.netDebt >= 0 ? 'var(--color-danger)' : 'var(--color-success)', margin: 0, fontSize: '1.05rem' }}>{formatCurrency(bs.netDebt)}</h4>
+                </div>
+                {bs.refund > 0 && (
+                  <span style={{ fontSize: '0.725rem', color: 'var(--color-success)' }}>
+                    (Đã khấu trừ hoàn tiền: -{formatCurrency(bs.refund)})
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Group Breakdown Cards */}
       {groups.length > 0 && (

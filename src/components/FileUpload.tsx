@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Lock, Unlock, Loader2, AlertCircle, DollarSign } from 'lucide-react';
+import { Upload, Lock, Unlock, Loader2, AlertCircle, DollarSign, Building2, Search, Calendar, FileEdit, Check } from 'lucide-react';
 import { detectTemplateAndMapping, parseTransactionsFromRaw, parseAmount, extractPDFRawRows } from '../utils/pdfParser';
 import type { RawRow, ColumnMapping } from '../utils/pdfParser';
 import type { Transaction, BankMappingTemplate } from '../utils/db';
@@ -50,6 +50,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   const [passwordError, setPasswordError] = useState<string>('');
   const [savePasswordCheckbox, setSavePasswordCheckbox] = useState<boolean>(true);
 
+  const [activePassword, setActivePassword] = useState<string>('');
   const [rawRows, setRawRows] = useState<RawRow[]>([]);
   const [isMappingMode, setIsMappingMode] = useState<boolean>(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState<boolean>(false);
@@ -252,6 +253,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
       }
 
       setRawRows(rows);
+      setActivePassword(usedPass);
 
       // Extract current selection and reset state immediately to prevent leakage to subsequent files in queue
       const currentSelectedTemplateId = selectedTemplateId;
@@ -486,8 +488,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({
       {!isMappingMode && !isLoading && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', maxWidth: '350px' }}>
-            <label style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-secondary)' }}>
-              🏦 Chọn mẫu cấu hình phân tích (Tùy chọn):
+            <label style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              <Building2 size={14} /> Chọn mẫu cấu hình phân tích (Tùy chọn):
             </label>
             <select
               className="input-field"
@@ -535,20 +537,20 @@ export const FileUpload: React.FC<FileUploadProps> = ({
                 flexDirection: 'column',
                 gap: '0.35rem'
               }}>
-                <div style={{ fontWeight: '700', color: 'var(--text-primary)', marginBottom: '0.15rem' }}>
-                  🔍 Xem trước cấu hình cột ({selectedTemplate.bankName}):
+                <div style={{ fontWeight: '700', color: 'var(--text-primary)', marginBottom: '0.15rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                  <Search size={14} /> Xem trước cấu hình cột ({selectedTemplate.bankName}):
                 </div>
-                <div>• 📅 Cột Ngày giao dịch: <strong>Cột {selectedTemplate.dateColIndex}</strong></div>
-                <div>• 📝 Cột Nội dung: <strong>Cột {selectedTemplate.descColIndex}</strong></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Calendar size={13} /> Cột Ngày giao dịch: <strong>Cột {selectedTemplate.dateColIndex}</strong></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><FileEdit size={13} /> Cột Nội dung: <strong>Cột {selectedTemplate.descColIndex}</strong></div>
                 {selectedTemplate.amountColIndex !== -1 ? (
-                  <div>• 💵 Cột Số tiền: <strong>Cột {selectedTemplate.amountColIndex}</strong></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><DollarSign size={13} /> Cột Số tiền: <strong>Cột {selectedTemplate.amountColIndex}</strong></div>
                 ) : (
                   <>
-                    <div>• 💸 Cột Ghi nợ (-): <strong>Cột {selectedTemplate.debitColIndex}</strong></div>
-                    <div>• 💰 Cột Ghi có (+): <strong>Cột {selectedTemplate.creditColIndex}</strong></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>Cột Ghi nợ (-): <strong>Cột {selectedTemplate.debitColIndex}</strong></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>Cột Ghi có (+): <strong>Cột {selectedTemplate.creditColIndex}</strong></div>
                   </>
                 )}
-                <div>• 📌 Tiêu đề cột: <strong>{selectedTemplate.hasHeader ? 'Có' : 'Không'}</strong></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Check size={13} /> Tiêu đề cột: <strong>{selectedTemplate.hasHeader ? 'Có' : 'Không'}</strong></div>
               </div>
             );
           })()}
@@ -683,6 +685,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
         <ColumnMapper
           rawRows={rawRows.map(r => r.cells)}
           pdfBuffer={fileData || undefined}
+          password={activePassword}
           onCancel={resetQueue}
           existingBanks={globalBanks}
           onApply={async (customMap) => {

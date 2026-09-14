@@ -10,7 +10,16 @@ import {
   AlertCircle,
   FileCheck2,
   LogOut,
-  Sliders
+  Sliders,
+  Building2,
+  Search,
+  Calendar,
+  DollarSign,
+  Check,
+  Share2,
+  Table,
+  Layers,
+  FileEdit
 } from 'lucide-react';
 
 // CSS styling imports
@@ -64,10 +73,13 @@ declare const google: any;
 // Components
 import { Dashboard } from './components/Dashboard';
 import { TransactionTable } from './components/TransactionTable';
+import { GroupTableView } from './components/GroupTableView';
 import { SettingsModal } from './components/SettingsModal';
 import { FileUpload } from './components/FileUpload';
 import { GoogleDriveConnector } from './components/GoogleDriveConnector';
 import { AdminDashboard } from './components/AdminDashboard';
+import { ShareModal } from './components/ShareModal';
+import { PublicShareViewer } from './components/PublicShareViewer';
 
 function App() {
   // Theme state
@@ -251,6 +263,21 @@ function App() {
     setArchivedPeriods(periods);
     localStorage.setItem('bst_archived_periods', JSON.stringify(periods));
   };
+
+  // Table view mode state: single table vs multi-group tables
+  const [tableViewMode, setTableViewMode] = useState<'single' | 'multi'>('single');
+  const [showShareModal, setShowShareModal] = useState<boolean>(false);
+
+  // Check URL query parameters for public share viewer mode
+  const shareParam = useMemo(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const qShare = urlParams.get('share');
+    if (qShare) return qShare;
+    if (window.location.hash.includes('shareData=')) {
+      return window.location.hash;
+    }
+    return null;
+  }, [window.location.search, window.location.hash]);
 
   // Navigation
   const [activeTab, setActiveTab] = useState<string>(() => {
@@ -852,7 +879,8 @@ function App() {
           alignItems: 'center',
           padding: '0.85rem 1.5rem',
           margin: '0 auto',
-          maxWidth: '1200px'
+          maxWidth: '1600px',
+          width: '98%'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <div style={{
@@ -924,268 +952,331 @@ function App() {
       </header>
 
       {/* Main app container */}
-      <main className="app-container" style={{ flex: '1', display: 'flex', flexDirection: 'column' }}>
-
-        {/* Banner messages */}
-        {errorMsg && (
-          <div className="glass-card animate-fade-in" style={{
-            backgroundColor: 'rgba(239, 68, 68, 0.1)',
-            borderColor: 'rgba(239, 68, 68, 0.2)',
-            color: 'var(--color-danger)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-            padding: '1rem',
-            borderRadius: 'var(--border-radius-md)'
-          }}>
-            <AlertCircle size={20} />
-            <span style={{ fontSize: '0.9rem', fontWeight: '600' }}>{errorMsg}</span>
-          </div>
-        )}
-
-        {successMsg && (
-          <div className="glass-card animate-fade-in" style={{
-            backgroundColor: 'rgba(16, 185, 129, 0.1)',
-            borderColor: 'rgba(16, 185, 129, 0.2)',
-            color: 'var(--color-success)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-            padding: '1rem',
-            borderRadius: 'var(--border-radius-md)'
-          }}>
-            <FileCheck2 size={20} />
-            <span style={{ fontSize: '0.9rem', fontWeight: '600' }}>{successMsg}</span>
-          </div>
-        )}
-
-        {isLoggedIn && currentUserDoc?.isDisabled ? (
-          <div className="glass-card animate-fade-in" style={{ textAlign: 'center', padding: '4rem 2rem', margin: '3rem auto', maxWidth: '500px', display: 'flex', flexDirection: 'column', gap: '1.5rem', alignItems: 'center' }}>
-            <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', padding: '1rem', borderRadius: '50%', color: 'var(--color-danger)' }}>
-              <AlertCircle size={48} />
-            </div>
-            <h2>Tài khoản bị vô hiệu hóa</h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
-              Tài khoản <strong>{googleUserEmail}</strong> của bạn đã bị vô hiệu hóa bởi Quản trị viên.
-              Vui lòng liên hệ với ban quản trị hệ thống để biết thêm chi tiết.
-            </p>
-            <button
-              className="btn btn-secondary"
-              onClick={handleGlobalLogout}
-              style={{ padding: '0.5rem 1.5rem' }}
-            >
-              Đăng xuất
-            </button>
-          </div>
-        ) : !isLoggedIn ? (
-          <div className="glass-card animate-fade-in" style={{ textAlign: 'center', padding: '4rem 2rem', margin: '3rem auto', maxWidth: '500px', display: 'flex', flexDirection: 'column', gap: '1.5rem', alignItems: 'center' }}>
-            <div style={{ backgroundColor: 'rgba(6, 182, 212, 0.1)', padding: '1rem', borderRadius: '50%', color: 'var(--color-info)' }}>
-              <Database size={48} />
-            </div>
-            <h2>Chào mừng bạn đến với BST Manager</h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
-              Vui lòng kết nối tài khoản Google Drive để sử dụng đầy đủ các tính năng: phân tích sao kê, quản lý giao dịch tín dụng và đồng bộ hóa dữ liệu bảo mật trên đám mây.
-            </p>
-            <button
-              className="btn btn-primary"
-              onClick={handleGlobalGoogleLogin}
-              style={{ backgroundColor: 'var(--color-info)', color: 'white', padding: '0.75rem 2rem', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: '0 4px 12px rgba(6, 182, 212, 0.2)' }}
-            >
-              Đăng nhập bằng Google
-            </button>
-          </div>
+      <main className="app-container" style={{
+        flex: 1,
+        padding: '1.25rem 1rem',
+        maxWidth: '1600px',
+        margin: '0 auto',
+        width: '98%'
+      }}>
+        {shareParam ? (
+          <PublicShareViewer
+            shareIdOrHash={shareParam}
+            onExit={() => { window.location.href = window.location.pathname; }}
+          />
         ) : (
           <>
-            {/* Tab Controls Navigation */}
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              borderBottom: '1px solid var(--color-primary)',
-              paddingBottom: '0.5rem',
-              flexWrap: 'wrap',
-              gap: '0.75rem'
-            }}>
-              <div className="tab-container" style={{ borderBottom: 'none', margin: 0, padding: 0 }}>
-                <button className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => window.location.hash = 'dashboard'}>
-                  <BarChart3 size={16} /> Dashboard
-                </button>
-                <button className={`tab-btn ${activeTab === 'transactions' ? 'active' : ''}`} onClick={() => window.location.hash = 'transactions'}>
-                  <ListFilter size={16} /> Giao dịch
-                </button>
+            {/* Banner messages */}
+            {errorMsg && (
+              <div className="glass-card animate-fade-in" style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                borderColor: 'rgba(239, 68, 68, 0.2)',
+                color: 'var(--color-danger)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                padding: '1rem',
+                borderRadius: 'var(--border-radius-md)'
+              }}>
+                <AlertCircle size={20} />
+                <span style={{ fontSize: '0.9rem', fontWeight: '600' }}>{errorMsg}</span>
               </div>
+            )}
 
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button
-                  className={`btn ${activeTab === 'import-file' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => window.location.hash = 'import-file'}
-                  style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-                >
-                  <UploadCloud size={16} /> Tải file PDF
-                </button>
-                <button
-                  className={`btn ${activeTab === 'import-drive' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => window.location.hash = 'import-drive'}
-                  style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-                >
-                  <Database size={16} /> Lấy từ Drive
-                </button>
+            {successMsg && (
+              <div className="glass-card animate-fade-in" style={{
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                borderColor: 'rgba(16, 185, 129, 0.2)',
+                color: 'var(--color-success)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                padding: '1rem',
+                borderRadius: 'var(--border-radius-md)'
+              }}>
+                <FileCheck2 size={20} />
+                <span style={{ fontSize: '0.9rem', fontWeight: '600' }}>{successMsg}</span>
               </div>
-            </div>
+            )}
 
-            {/* Tab Content Rendering */}
-            <div style={{ flex: '1', display: 'flex', flexDirection: 'column', marginTop: '1.5rem' }}>
-
-              {activeTab === 'dashboard' && (
-                <Dashboard
-                  transactions={filteredTransactions}
-                  categories={categories}
-                  groups={groups}
-                  selectedStatement={selectedStatement}
-                  setSelectedStatement={setSelectedStatement}
-                  statementFiles={statementFiles}
-                  statementPeriods={statementPeriods}
-                />
-              )}
-
-              {activeTab === 'transactions' && (
-                <TransactionTable
-                  transactions={filteredTransactions}
-                  categories={categories}
-                  groups={groups}
-                  selectedStatement={selectedStatement}
-                  setSelectedStatement={setSelectedStatement}
-                  statementPeriods={statementPeriods}
-                  archivedPeriods={archivedPeriods}
-                  onUpdateTransactions={handleUpdateTransactions}
-                  onDeleteTransactions={handleDeleteTransactions}
-                  onCreateGroup={handleCreateGroup}
-                  onAddRule={handleAddRule}
-                  isRebuilding={isRebuilding}
-                />
-              )}
-
-              {activeTab === 'import-file' && (
-                <div className="glass-card animate-fade-in">
-                  <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-                    <h2>Nhập sao kê từ file PDF địa phương</h2>
-                    <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                      Tải lên một hoặc nhiều tệp sao kê ngân hàng định dạng PDF.
-                    </p>
-                  </div>
-
-                  <FileUpload
-                    onTransactionsParsed={handleTransactionsParsed}
-                    onError={showError}
-                    externalPDFs={externalPDFs.length > 0 ? externalPDFs : null}
-                    onClearExternal={() => setExternalPDFs([])}
-                    currentUserDoc={currentUserDoc}
-                    incrementUploadCounter={incrementUploadCounter}
-                    globalTemplates={globalTemplates}
-                    onSaveGlobalTemplate={handleSaveGlobalTemplate}
-                    selectedTemplateId={selectedTemplateId}
-                    setSelectedTemplateId={setSelectedTemplateId}
-                    globalBanks={globalBanks}
-                  />
+            {isLoggedIn && currentUserDoc?.isDisabled ? (
+              <div className="glass-card animate-fade-in" style={{ textAlign: 'center', padding: '4rem 2rem', margin: '3rem auto', maxWidth: '500px', display: 'flex', flexDirection: 'column', gap: '1.5rem', alignItems: 'center' }}>
+                <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', padding: '1rem', borderRadius: '50%', color: 'var(--color-danger)' }}>
+                  <AlertCircle size={48} />
                 </div>
-              )}
-
-              {activeTab === 'import-drive' && (
-                <div className="glass-card animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                  <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>
-                    <h2>Nhập sao kê từ Google Drive</h2>
-                    <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                      Chọn tệp sao kê PDF trực tiếp từ tài khoản Google Drive của bạn.
-                    </p>
+                <h2>Tài khoản bị vô hiệu hóa</h2>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
+                  Tài khoản <strong>{googleUserEmail}</strong> của bạn đã bị vô hiệu hóa bởi Quản trị viên.
+                  Vui lòng liên hệ với ban quản trị hệ thống để biết thêm chi tiết.
+                </p>
+                <button
+                  className="btn btn-secondary"
+                  onClick={handleGlobalLogout}
+                  style={{ padding: '0.5rem 1.5rem' }}
+                >
+                  Đăng xuất
+                </button>
+              </div>
+            ) : !isLoggedIn ? (
+              <div className="glass-card animate-fade-in" style={{ textAlign: 'center', padding: '4rem 2rem', margin: '3rem auto', maxWidth: '500px', display: 'flex', flexDirection: 'column', gap: '1.5rem', alignItems: 'center' }}>
+                <div style={{ backgroundColor: 'rgba(6, 182, 212, 0.1)', padding: '1rem', borderRadius: '50%', color: 'var(--color-info)' }}>
+                  <Database size={48} />
+                </div>
+                <h2>Chào mừng bạn đến với BST Manager</h2>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
+                  Vui lòng kết nối tài khoản Google Drive để sử dụng đầy đủ các tính năng: phân tích sao kê, quản lý giao dịch tín dụng và đồng bộ hóa dữ liệu bảo mật trên đám mây.
+                </p>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleGlobalGoogleLogin}
+                  style={{ backgroundColor: 'var(--color-info)', color: 'white', padding: '0.75rem 2rem', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: '0 4px 12px rgba(6, 182, 212, 0.2)' }}
+                >
+                  Đăng nhập bằng Google
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Tab Controls Navigation */}
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  borderBottom: '1px solid var(--color-primary)',
+                  paddingBottom: '0.5rem',
+                  flexWrap: 'wrap',
+                  gap: '0.75rem'
+                }}>
+                  <div className="tab-container" style={{ borderBottom: 'none', margin: 0, padding: 0 }}>
+                    <button className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => window.location.hash = 'dashboard'}>
+                      <BarChart3 size={16} /> Dashboard
+                    </button>
+                    <button className={`tab-btn ${activeTab === 'transactions' ? 'active' : ''}`} onClick={() => window.location.hash = 'transactions'}>
+                      <ListFilter size={16} /> Giao dịch
+                    </button>
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', maxWidth: '350px' }}>
-                      <label style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-secondary)' }}>
-                        🏦 Chọn mẫu cấu hình phân tích (Tùy chọn):
-                      </label>
-                      <select
-                        className="input-field"
-                        value={selectedTemplateId}
-                        onChange={(e) => setSelectedTemplateId(e.target.value)}
-                        style={{ fontSize: '0.85rem', padding: '0.5rem 0.75rem' }}
-                      >
-                        <option value="">-- Tự động nhận diện cấu hình --</option>
-                        {globalTemplates.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.bankName} - {t.cardType || 'Mặc định'} {t.cardClass || 'Mặc định'}
-                          </option>
-                        ))}
-                      </select>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                    {activeTab === 'transactions' && (
+                      <div style={{ display: 'flex', backgroundColor: 'var(--bg-secondary)', padding: '0.15rem', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--border-color)', marginRight: '0.5rem' }}>
+                        <button
+                          className={`btn ${tableViewMode === 'single' ? 'btn-primary' : 'btn-ghost'}`}
+                          style={{ padding: '0.35rem 0.75rem', fontSize: '0.775rem', height: '32px' }}
+                          onClick={() => setTableViewMode('single')}
+                        >
+                          <Table size={14} /> Bảng Tổng Hợp
+                        </button>
+                        <button
+                          className={`btn ${tableViewMode === 'multi' ? 'btn-primary' : 'btn-ghost'}`}
+                          style={{ padding: '0.35rem 0.75rem', fontSize: '0.775rem', height: '32px' }}
+                          onClick={() => setTableViewMode('multi')}
+                        >
+                          <Layers size={14} /> Các Bảng Riêng Nhóm
+                        </button>
+                      </div>
+                    )}
+
+                    <button
+                      className="btn btn-secondary"
+                      style={{ padding: '0.4rem 0.85rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem', borderColor: 'var(--color-primary)', color: 'var(--color-primary)' }}
+                      onClick={() => setShowShareModal(true)}
+                      title="Tạo Link chia sẻ bảo mật có mật khẩu và tự động hết hạn"
+                    >
+                      <Share2 size={16} /> Tạo Link Share
+                    </button>
+                    <button
+                      className={`btn ${activeTab === 'import-file' ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => window.location.hash = 'import-file'}
+                      style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                    >
+                      <UploadCloud size={16} /> Tải file PDF
+                    </button>
+                    <button
+                      className={`btn ${activeTab === 'import-drive' ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => window.location.hash = 'import-drive'}
+                      style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                    >
+                      <Database size={16} /> Lấy từ Drive
+                    </button>
+                  </div>
+                </div>
+
+                {/* Tab Content Rendering */}
+                <div style={{ flex: '1', display: 'flex', flexDirection: 'column', marginTop: '1.5rem' }}>
+
+                  {activeTab === 'dashboard' && (
+                    <Dashboard
+                      transactions={filteredTransactions}
+                      categories={categories}
+                      groups={groups}
+                      selectedStatement={selectedStatement}
+                      setSelectedStatement={setSelectedStatement}
+                      statementFiles={statementFiles}
+                      statementPeriods={statementPeriods}
+                    />
+                  )}
+
+                  {activeTab === 'transactions' && (
+                    tableViewMode === 'single' ? (
+                      <TransactionTable
+                        transactions={filteredTransactions}
+                        categories={categories}
+                        groups={groups}
+                        selectedStatement={selectedStatement}
+                        setSelectedStatement={setSelectedStatement}
+                        statementPeriods={statementPeriods}
+                        archivedPeriods={archivedPeriods}
+                        onUpdateTransactions={handleUpdateTransactions}
+                        onDeleteTransactions={handleDeleteTransactions}
+                        onCreateGroup={handleCreateGroup}
+                        onAddRule={handleAddRule}
+                        isRebuilding={isRebuilding}
+                      />
+                    ) : (
+                      <GroupTableView
+                        transactions={filteredTransactions}
+                        categories={categories}
+                        groups={groups}
+                        selectedStatement={selectedStatement}
+                        onUpdateTransactions={handleUpdateTransactions}
+                        onDeleteTransactions={handleDeleteTransactions}
+                        onCreateGroup={handleCreateGroup}
+                      />
+                    )
+                  )}
+
+                  {activeTab === 'import-file' && (
+                    <div className="glass-card animate-fade-in">
+                      <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+                        <h2>Nhập sao kê từ file PDF địa phương</h2>
+                        <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                          Tải lên một hoặc nhiều tệp sao kê ngân hàng định dạng PDF.
+                        </p>
+                      </div>
+
+                      <FileUpload
+                        onTransactionsParsed={handleTransactionsParsed}
+                        onError={showError}
+                        externalPDFs={externalPDFs.length > 0 ? externalPDFs : null}
+                        onClearExternal={() => setExternalPDFs([])}
+                        currentUserDoc={currentUserDoc}
+                        incrementUploadCounter={incrementUploadCounter}
+                        globalTemplates={globalTemplates}
+                        onSaveGlobalTemplate={handleSaveGlobalTemplate}
+                        selectedTemplateId={selectedTemplateId}
+                        setSelectedTemplateId={setSelectedTemplateId}
+                        globalBanks={globalBanks}
+                      />
                     </div>
+                  )}
 
-                    {/* Configuration Preview Panel */}
-                    {(() => {
-                      const selectedTemplate = selectedTemplateId === 'predefined_shinhan_bank'
-                        ? {
-                          bankName: 'Shinhan Bank',
-                          cardType: 'Mặc định',
-                          cardClass: 'Mặc định',
-                          dateColIndex: 0,
-                          descColIndex: 1,
-                          amountColIndex: 1,
-                          debitColIndex: undefined as number | undefined,
-                          creditColIndex: undefined as number | undefined,
-                          hasHeader: true
-                        }
-                        : globalTemplates.find(t => t.id === selectedTemplateId);
+                  {activeTab === 'import-drive' && (
+                    <div className="glass-card animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                      <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>
+                        <h2>Nhập sao kê từ Google Drive</h2>
+                        <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                          Chọn tệp sao kê PDF trực tiếp từ tài khoản Google Drive của bạn.
+                        </p>
+                      </div>
 
-                      if (!selectedTemplate) return null;
-
-                      return (
-                        <div style={{
-                          backgroundColor: 'var(--bg-secondary)',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: 'var(--border-radius-md)',
-                          padding: '0.85rem 1rem',
-                          maxWidth: '500px',
-                          fontSize: '0.8rem',
-                          color: 'var(--text-secondary)',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '0.35rem'
-                        }}>
-                          <div style={{ fontWeight: '700', color: 'var(--text-primary)', marginBottom: '0.15rem' }}>
-                            🔍 Xem trước cấu hình cột ({selectedTemplate.bankName}):
-                          </div>
-                          <div>• 📅 Cột Ngày giao dịch: <strong>Cột {selectedTemplate.dateColIndex}</strong></div>
-                          <div>• 📝 Cột Nội dung: <strong>Cột {selectedTemplate.descColIndex}</strong></div>
-                          {selectedTemplate.amountColIndex !== -1 ? (
-                            <div>• 💵 Cột Số tiền: <strong>Cột {selectedTemplate.amountColIndex}</strong></div>
-                          ) : (
-                            <>
-                              <div>• 💸 Cột Ghi nợ (-): <strong>Cột {selectedTemplate.debitColIndex}</strong></div>
-                              <div>• 💰 Cột Ghi có (+): <strong>Cột {selectedTemplate.creditColIndex}</strong></div>
-                            </>
-                          )}
-                          <div>• 📌 Tiêu đề cột: <strong>{selectedTemplate.hasHeader ? 'Có' : 'Không'}</strong></div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', maxWidth: '350px' }}>
+                          <label style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <Building2 size={14} /> Chọn mẫu cấu hình phân tích (Tùy chọn):
+                          </label>
+                          <select
+                            className="input-field"
+                            value={selectedTemplateId}
+                            onChange={(e) => setSelectedTemplateId(e.target.value)}
+                            style={{ fontSize: '0.85rem', padding: '0.5rem 0.75rem' }}
+                          >
+                            <option value="">-- Tự động nhận diện cấu hình --</option>
+                            {globalTemplates.map((t) => (
+                              <option key={t.id} value={t.id}>
+                                {t.bankName} - {t.cardType || 'Mặc định'} {t.cardClass || 'Mặc định'}
+                              </option>
+                            ))}
+                          </select>
                         </div>
-                      );
-                    })()}
-                  </div>
 
-                  <GoogleDriveConnector
-                    onPDFsLoaded={handleDrivePDFsLoaded}
-                    onError={showError}
-                    accessToken={googleAccessToken}
-                  />
+                        {/* Configuration Preview Panel */}
+                        {(() => {
+                          const selectedTemplate = selectedTemplateId === 'predefined_shinhan_bank'
+                            ? {
+                              bankName: 'Shinhan Bank',
+                              cardType: 'Mặc định',
+                              cardClass: 'Mặc định',
+                              dateColIndex: 0,
+                              descColIndex: 1,
+                              amountColIndex: 1,
+                              debitColIndex: undefined as number | undefined,
+                              creditColIndex: undefined as number | undefined,
+                              hasHeader: true
+                            }
+                            : globalTemplates.find(t => t.id === selectedTemplateId);
+
+                          if (!selectedTemplate) return null;
+
+                          return (
+                            <div style={{
+                              backgroundColor: 'var(--bg-secondary)',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: 'var(--border-radius-md)',
+                              padding: '0.85rem 1rem',
+                              maxWidth: '500px',
+                              fontSize: '0.8rem',
+                              color: 'var(--text-secondary)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.35rem'
+                            }}>
+                              <div style={{ fontWeight: '700', color: 'var(--text-primary)', marginBottom: '0.15rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                <Search size={14} /> Xem trước cấu hình cột ({selectedTemplate.bankName}):
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Calendar size={13} /> Cột Ngày giao dịch: <strong>Cột {selectedTemplate.dateColIndex}</strong></div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><FileEdit size={13} /> Cột Nội dung: <strong>Cột {selectedTemplate.descColIndex}</strong></div>
+                              {selectedTemplate.amountColIndex !== -1 ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><DollarSign size={13} /> Cột Số tiền: <strong>Cột {selectedTemplate.amountColIndex}</strong></div>
+                              ) : (
+                                <>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>Cột Ghi nợ (-): <strong>Cột {selectedTemplate.debitColIndex}</strong></div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>Cột Ghi có (+): <strong>Cột {selectedTemplate.creditColIndex}</strong></div>
+                                </>
+                              )}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Check size={13} /> Tiêu đề cột: <strong>{selectedTemplate.hasHeader ? 'Có' : 'Không'}</strong></div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      <GoogleDriveConnector
+                        onPDFsLoaded={handleDrivePDFsLoaded}
+                        onError={showError}
+                        accessToken={googleAccessToken}
+                      />
+                    </div>
+                  )}
+
+                  {activeTab === 'admin' && isAdmin && (
+                    <AdminDashboard />
+                  )}
+
                 </div>
-              )}
-
-              {activeTab === 'admin' && isAdmin && (
-                <AdminDashboard />
-              )}
-
-            </div>
+              </>
+            )}
           </>
         )}
 
       </main>
+
+      {/* Share Modal */}
+      {showShareModal && (
+        <ShareModal
+          transactions={filteredTransactions}
+          groups={groups}
+          selectedStatement={selectedStatement}
+          onClose={() => setShowShareModal(false)}
+        />
+      )}
 
       {/* Footer */}
       <footer style={{
